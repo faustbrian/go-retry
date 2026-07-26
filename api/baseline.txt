@@ -1,0 +1,459 @@
+PACKAGE github.com/faustbrian/golib/pkg/retry
+package retry // import "github.com/faustbrian/golib/pkg/retry"
+
+Package retry executes explicitly classified operations under bounded retry
+policies. It never decides whether an operation is safe to repeat.
+
+CONSTANTS
+
+const MaxHistoryEntries = 1024
+    MaxHistoryEntries is the largest failure history retained by a policy.
+
+
+VARIABLES
+
+var ErrInvalidPolicy = errors.New("invalid retry policy")
+    ErrInvalidPolicy identifies contradictory, implicit, or unbounded policies.
+
+
+FUNCTIONS
+
+func Permanent(err error) error
+    Permanent marks err as ineligible for retry.
+
+func Retryable(err error) error
+    Retryable marks err as eligible for an explicitly configured retry policy.
+
+
+TYPES
+
+type Attempt struct {
+	Attempt        uint
+	Elapsed        time.Duration
+	Delay          time.Duration
+	Classification Classification
+	Err            error
+}
+    Attempt records bounded failure metadata. It never retains operation values.
+
+type Backoff interface {
+	Delay(attempt uint, previous time.Duration, random Random) time.Duration
+}
+    Backoff computes the delay before retry attempt. Attempt starts at one for
+    the first retry. Previous is the previously selected delay and is used only
+    by state-dependent strategies such as decorrelated jitter.
+
+func Constant(delay time.Duration) Backoff
+    Constant returns the same non-negative delay for every attempt.
+
+func DecorrelatedJitter(base time.Duration) Backoff
+    DecorrelatedJitter chooses uniformly between base and three times the
+    previous delay. The first retry uses base as its previous delay.
+
+func EqualJitter(backoff Backoff) Backoff
+    EqualJitter retains half of the wrapped delay and uniformly jitters the
+    remainder.
+
+func Exponential(initial time.Duration, multiplier uint64) Backoff
+    Exponential returns initial*multiplier^(attempt-1) with saturation.
+
+func ExponentialJitter(initial time.Duration, multiplier uint64, factor float64) Backoff
+    ExponentialJitter applies centered proportional jitter to exponential
+    backoff. Factor is clamped to [0, 1].
+
+func Fibonacci(unit time.Duration) Backoff
+    Fibonacci returns unit multiplied by the attempt-th Fibonacci number,
+    where the first two retry delays both equal unit.
+
+func FullJitter(backoff Backoff) Backoff
+    FullJitter chooses uniformly between zero and the wrapped delay.
+
+func Linear(initial, increment time.Duration) Backoff
+    Linear returns initial + (attempt-1)*increment, using saturating arithmetic.
+
+func Polynomial(base, coefficient time.Duration, power uint) Backoff
+    Polynomial returns base + coefficient*attempt^power with saturation.
+
+type BudgetError struct {
+	Kind BudgetKind
+
+	// Has unexported fields.
+}
+    BudgetError reports exhaustion of an elapsed, sleep, or attempt budget.
+
+func (err *BudgetError) Error() string
+
+func (err *BudgetError) Result() Result
+    Result returns a defensive copy of terminal metadata.
+
+func (err *BudgetError) Unwrap() error
+
+type BudgetKind string
+    BudgetKind identifies the configured budget that stopped execution.
+
+const (
+	// BudgetElapsed identifies the total elapsed-time budget.
+	BudgetElapsed BudgetKind = "elapsed"
+	// BudgetSleep identifies the accumulated-sleep budget.
+	BudgetSleep BudgetKind = "sleep"
+	// BudgetAttempt identifies a per-attempt timeout.
+	BudgetAttempt BudgetKind = "attempt"
+)
+type CanceledError struct {
+	// Has unexported fields.
+}
+    CanceledError reports cancellation by the caller or its deadline.
+
+func (err *CanceledError) Error() string
+
+func (err *CanceledError) Result() Result
+    Result returns a defensive copy of terminal metadata.
+
+func (err *CanceledError) Unwrap() error
+
+type Classification uint8
+    Classification is an explicit decision about one operation failure.
+
+const (
+	// ClassificationPermanent stops execution and preserves the operation error.
+	ClassificationPermanent Classification = iota + 1
+	// ClassificationRetryable permits another bounded attempt.
+	ClassificationRetryable
+)
+type Classifier interface {
+	Classify(context.Context, error) (Classification, error)
+}
+    Classifier classifies an operation failure. Returning an error means the
+    classifier itself failed and execution stops.
+
+func RetryableClassifier() Classifier
+    RetryableClassifier returns a classifier that retries RetryableError values
+    and treats every other error as permanent.
+
+type ClassifyFunc func(context.Context, error) (Classification, error)
+    ClassifyFunc adapts a function to Classifier.
+
+func (function ClassifyFunc) Classify(ctx context.Context, err error) (Classification, error)
+    Classify invokes the adapted function.
+
+type Clock interface {
+	Now() time.Time
+}
+    Clock supplies policy time. Implementations may additionally implement
+    TimeoutClock to make per-attempt timeouts deterministic.
+
+type Config struct {
+	Backoff        Backoff
+	MaxAttempts    uint
+	MaxElapsed     time.Duration
+	AttemptTimeout time.Duration
+	MinDelay       time.Duration
+	MaxDelay       time.Duration
+	MaxSleep       time.Duration
+	Clock          Clock
+	Sleeper        Sleeper
+	Random         Random
+	Classifier     Classifier
+	Observer       Observer
+	HistoryLimit   uint
+}
+    Config contains all dependencies and bounds for a Policy. MaxAttempts is
+    mandatory so no policy can retry forever.
+
+type DelayHint interface {
+	RetryDelay(time.Time) (time.Duration, bool)
+}
+    DelayHint is implemented by classified errors that carry a server-provided
+    minimum retry delay, such as HTTP Retry-After.
+
+type ExhaustedError struct {
+	// Has unexported fields.
+}
+    ExhaustedError reports that MaxAttempts stopped a retryable operation.
+
+func (err *ExhaustedError) Error() string
+
+func (err *ExhaustedError) Result() Result
+    Result returns a defensive copy of terminal metadata.
+
+func (err *ExhaustedError) Unwrap() error
+
+type Observation struct {
+	Attempt        uint
+	Elapsed        time.Duration
+	NextDelay      time.Duration
+	Classification Classification
+	Reason         Reason
+}
+    Observation is a bounded notification for one completed attempt.
+
+type ObserveFunc func(Observation)
+    ObserveFunc adapts a function to Observer.
+
+func (function ObserveFunc) Observe(observation Observation)
+    Observe invokes the adapted function.
+
+type Observer interface {
+	Observe(Observation)
+}
+    Observer receives bounded lifecycle metadata.
+
+type PermanentError struct{ Cause error }
+    PermanentError explicitly marks a cause as ineligible for retry.
+
+func (err *PermanentError) Error() string
+
+func (err *PermanentError) Unwrap() error
+
+type Policy struct {
+	// Has unexported fields.
+}
+    Policy is an immutable, explicitly bounded retry policy.
+
+func NewPolicy(config Config) (*Policy, error)
+    NewPolicy validates and copies config.
+
+type Random interface {
+	Int64n(upper int64) int64
+}
+    Random is an injected, concurrency-safe source of uniform integers in [0,
+    upper). Implementations must return zero when upper is non-positive.
+
+type Reason string
+    Reason identifies why execution stopped.
+
+const (
+	// ReasonSucceeded identifies a successful operation.
+	ReasonSucceeded Reason = "succeeded"
+	// ReasonPermanent identifies an explicitly permanent failure.
+	ReasonPermanent Reason = "permanent"
+	// ReasonAttemptsExhausted identifies maximum-attempt exhaustion.
+	ReasonAttemptsExhausted Reason = "attempts_exhausted"
+	// ReasonCanceled identifies caller cancellation or deadline.
+	ReasonCanceled Reason = "canceled"
+	// ReasonElapsedBudget identifies total elapsed-time exhaustion.
+	ReasonElapsedBudget Reason = "elapsed_budget"
+	// ReasonSleepBudget identifies accumulated-sleep exhaustion.
+	ReasonSleepBudget Reason = "sleep_budget"
+	// ReasonAttemptBudget identifies a per-attempt timeout.
+	ReasonAttemptBudget Reason = "attempt_budget"
+	// ReasonClassifierFailure identifies a classifier error or invalid result.
+	ReasonClassifierFailure Reason = "classifier_failure"
+	// ReasonSleeperFailure identifies a non-context sleeper failure.
+	ReasonSleeperFailure Reason = "sleeper_failure"
+)
+type Result struct {
+	Attempts   uint
+	Elapsed    time.Duration
+	FinalDelay time.Duration
+	Reason     Reason
+	History    []Attempt
+}
+    Result contains bounded execution metadata and never retains operation
+    values.
+
+func Do[T any](ctx context.Context, policy *Policy, operation func(context.Context) (T, error)) (T, Result, error)
+    Do executes operation under policy. The caller remains solely responsible
+    for deciding whether repeating operation is safe.
+
+type RetryableError struct{ Cause error }
+    RetryableError explicitly marks a cause as eligible for bounded retry.
+
+func (err *RetryableError) Error() string
+
+func (err *RetryableError) Unwrap() error
+
+type SeededRandom struct {
+	// Has unexported fields.
+}
+    SeededRandom is a deterministic, concurrency-safe PCG random source.
+
+func NewRandom(seed1, seed2 uint64) *SeededRandom
+    NewRandom constructs a deterministic random source from explicit seeds.
+
+func (random *SeededRandom) Int64n(upper int64) int64
+    Int64n returns a uniform value in [0, upper).
+
+type Sleeper interface {
+	Sleep(context.Context, time.Duration) error
+}
+    Sleeper waits without owning policy or retry decisions.
+
+type SystemClock struct{}
+    SystemClock uses the process monotonic wall clock. It contains no global
+    mutable state.
+
+func (SystemClock) Now() time.Time
+    Now returns the current time.
+
+func (SystemClock) WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc)
+    WithTimeout derives a standard context timeout.
+
+type SystemSleeper struct{}
+    SystemSleeper waits with a context-owned timer and always stops the timer.
+
+func (SystemSleeper) Sleep(ctx context.Context, delay time.Duration) error
+    Sleep waits for delay or context cancellation.
+
+type TimeoutClock interface {
+	Clock
+	WithTimeout(context.Context, time.Duration) (context.Context, context.CancelFunc)
+}
+    TimeoutClock derives deadline contexts using an injected clock.
+
+PACKAGE github.com/faustbrian/golib/pkg/retry/retryadapter
+package retryadapter // import "github.com/faustbrian/golib/pkg/retry/retryadapter"
+
+Package retryadapter provides explicit classifier seams for integrations whose
+transient failures are domain-specific. It never decides idempotency.
+
+FUNCTIONS
+
+func Filesystem(transient func(error) bool) (retry.Classifier, error)
+    Filesystem constructs a classifier using filesystem/backend evidence
+    supplied by the caller. Mutation replay safety remains caller-owned.
+
+func ObjectStorage(transient func(error) bool) (retry.Classifier, error)
+    ObjectStorage constructs a classifier using provider evidence supplied by
+    the caller. Multipart and object mutation safety remain caller-owned.
+
+func Queue(transient func(error) bool) (retry.Classifier, error)
+    Queue constructs a classifier using queue-backend evidence supplied by the
+    caller. Message acknowledgement and delivery safety remain caller-owned.
+
+func Webhook(transient func(error) bool) (retry.Classifier, error)
+    Webhook constructs a classifier using webhook transport evidence supplied by
+    the caller. Delivery idempotency remains caller-owned.
+
+PACKAGE github.com/faustbrian/golib/pkg/retry/retryhttp
+package retryhttp // import "github.com/faustbrian/golib/pkg/retry/retryhttp"
+
+Package retryhttp classifies HTTP response failures and parses Retry-After.
+It does not decide whether an HTTP operation is safe to repeat.
+
+FUNCTIONS
+
+func ParseRetryAfter(value string, now time.Time) (time.Duration, bool)
+    ParseRetryAfter parses delta-seconds or an HTTP date. Past dates produce an
+    immediate retry hint. Oversized delta-seconds saturate safely.
+
+func StatusError(statusCode int, header http.Header, cause error) error
+    StatusError constructs a bounded HTTP error. Only Retry-After is retained
+    from header; response bodies and other headers remain caller-owned.
+
+
+TYPES
+
+type Classifier struct {
+	// Has unexported fields.
+}
+    Classifier classifies HTTP failures without making idempotency decisions.
+
+func NewClassifier(options Options) *Classifier
+    NewClassifier copies options into an immutable classifier.
+
+func (classifier *Classifier) Classify(_ context.Context, err error) (retry.Classification, error)
+    Classify implements retry.Classifier.
+
+type Error struct {
+	StatusCode int
+
+	// Has unexported fields.
+}
+    Error contains bounded response metadata and preserves an optional cause.
+
+func (err *Error) Error() string
+
+func (err *Error) RetryDelay(now time.Time) (time.Duration, bool)
+    RetryDelay implements retry.DelayHint.
+
+func (err *Error) Unwrap() error
+
+type Options struct {
+	RetryStatuses []int
+	Transient     func(error) bool
+}
+    Options configures protocol classification. RetryStatuses replaces the
+    conservative default set. Transient may classify transport errors, but does
+    not assert that replay is safe.
+
+PACKAGE github.com/faustbrian/golib/pkg/retry/retrylog
+package retrylog // import "github.com/faustbrian/golib/pkg/retry/retrylog"
+
+Package retrylog adapts bounded retry observations to log/slog, the logging API
+used by log. It never records operation errors or values.
+
+CONSTANTS
+
+const MaxPolicyIDLength = 128
+    MaxPolicyIDLength bounds the caller-supplied policy identity.
+
+
+TYPES
+
+type Observer struct {
+	// Has unexported fields.
+}
+    Observer logs bounded retry lifecycle fields.
+
+func New(options Options) (*Observer, error)
+    New validates options and constructs an Observer.
+
+func (observer *Observer) Observe(observation retry.Observation)
+    Observe records one event without error messages or operation values.
+
+type Options struct {
+	Logger   *slog.Logger
+	Level    slog.Level
+	PolicyID string
+}
+    Options configures structured retry observation logging.
+
+PACKAGE github.com/faustbrian/golib/pkg/retry/retrypgx
+package retrypgx // import "github.com/faustbrian/golib/pkg/retry/retrypgx"
+
+Package retrypgx classifies PostgreSQL errors by SQLSTATE. It does not decide
+whether a transaction or statement is safe to repeat.
+
+TYPES
+
+type Classifier struct{}
+    Classifier conservatively classifies PostgreSQL failures.
+
+func NewClassifier() Classifier
+    NewClassifier constructs an immutable PostgreSQL classifier.
+
+func (Classifier) Classify(_ context.Context, err error) (retry.Classification, error)
+    Classify implements retry.Classifier. Serialization, deadlock, lock
+    availability, server restart, and connection-class failures are transient.
+
+PACKAGE github.com/faustbrian/golib/pkg/retry/retrytelemetry
+package retrytelemetry // import "github.com/faustbrian/golib/pkg/retry/retrytelemetry"
+
+Package retrytelemetry adapts bounded retry observations to the standard
+OpenTelemetry API accepted by telemetry.
+
+CONSTANTS
+
+const MaxPolicyIDLength = 128
+    MaxPolicyIDLength bounds the caller-supplied metric attribute.
+
+
+TYPES
+
+type Observer struct {
+	// Has unexported fields.
+}
+    Observer records attempt counts, elapsed time, and selected delays.
+
+func New(options Options) (*Observer, error)
+    New constructs bounded retry metric instruments.
+
+func (observer *Observer) Observe(observation retry.Observation)
+    Observe records bounded attributes and no operation values or errors.
+
+type Options struct {
+	MeterProvider metric.MeterProvider
+	PolicyID      string
+}
+    Options configures retry metric instruments.

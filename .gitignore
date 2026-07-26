@@ -1,0 +1,7 @@
+/coverage.out
+/mutation-results.json
+/dist/
+/.tools/
+*.test
+*.prof
+mutation.log
