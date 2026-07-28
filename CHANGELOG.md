@@ -4,6 +4,12 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Fixed
+
+- PostgreSQL retry classification now recognizes pgx-safe, closed-connection,
+  timeout, truncated-response, and network failures as transient while
+  preserving caller cancellation and deadlines as permanent.
+
 ### Added
 
 - Explicit bounded retry policies and generic value execution.

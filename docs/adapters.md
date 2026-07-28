@@ -6,9 +6,11 @@ and retains only status, Retry-After, and the cause. Delay hints remain subject
 to policy maximum delay and budgets. Transport classification is opt-in.
 
 `retrypgx` recognizes SQLSTATE class `08`, serialization failure `40001`,
-deadlock `40P01`, lock unavailable `55P03`, and selected server restart states.
-Constraint violations, syntax errors, authentication failures, and query
-cancellation remain permanent.
+deadlock `40P01`, lock unavailable `55P03`, selected server restart states,
+pgx failures explicitly marked safe to retry, closed connections, transport
+timeouts, truncated responses, and network failures. Caller cancellation and
+deadlines, constraint violations, syntax errors, authentication failures, and
+query cancellation remain permanent.
 
 `retryadapter` requires caller predicates for queue, webhook, filesystem, and
 object-storage failures. Those adapters deliberately know nothing about

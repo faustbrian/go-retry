@@ -423,7 +423,7 @@ type Classifier struct{}
 func NewClassifier() Classifier
     NewClassifier constructs an immutable PostgreSQL classifier.
 
-func (Classifier) Classify(_ context.Context, err error) (retry.Classification, error)
+func (Classifier) Classify(ctx context.Context, err error) (retry.Classification, error)
     Classify implements retry.Classifier. Serialization, deadlock, lock
     availability, server restart, and connection-class failures are transient.
 
