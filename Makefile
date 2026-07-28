@@ -39,7 +39,7 @@ staticcheck:
 	$(STATICCHECK) ./...
 
 actionlint:
-	$(ACTIONLINT) .github/workflows/*.yml
+	$(ACTIONLINT) ../../.github/workflows/ci.yml
 
 architecture:
 	./scripts/check-architecture.sh
