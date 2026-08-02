@@ -79,7 +79,8 @@ type BudgetError struct {
 
 	// Has unexported fields.
 }
-    BudgetError reports exhaustion of an elapsed, sleep, or attempt budget.
+    BudgetError reports exhaustion of an elapsed, sleep, attempt, or shared-work
+    budget.
 
 func (err *BudgetError) Error() string
 
@@ -98,6 +99,8 @@ const (
 	BudgetSleep BudgetKind = "sleep"
 	// BudgetAttempt identifies a per-attempt timeout.
 	BudgetAttempt BudgetKind = "attempt"
+	// BudgetWork identifies denial by the shared retry-plus-hedge work budget.
+	BudgetWork BudgetKind = "work"
 )
 type CanceledError struct {
 	// Has unexported fields.
@@ -156,6 +159,9 @@ type Config struct {
 	Classifier     Classifier
 	Observer       Observer
 	HistoryLimit   uint
+	// UseResilienceBudget consumes the shared work-amplification scope attached
+	// to the execution context. Existing standalone behavior is unchanged when false.
+	UseResilienceBudget bool
 }
     Config contains all dependencies and bounds for a Policy. MaxAttempts is
     mandatory so no policy can retry forever.
@@ -241,6 +247,8 @@ const (
 	ReasonClassifierFailure Reason = "classifier_failure"
 	// ReasonSleeperFailure identifies a non-context sleeper failure.
 	ReasonSleeperFailure Reason = "sleeper_failure"
+	// ReasonWorkBudget identifies local denial by the shared amplification budget.
+	ReasonWorkBudget Reason = "work_budget"
 )
 type Result struct {
 	Attempts   uint

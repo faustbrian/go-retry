@@ -82,9 +82,11 @@ const (
 	BudgetSleep BudgetKind = "sleep"
 	// BudgetAttempt identifies a per-attempt timeout.
 	BudgetAttempt BudgetKind = "attempt"
+	// BudgetWork identifies denial by the shared retry-plus-hedge work budget.
+	BudgetWork BudgetKind = "work"
 )
 
-// BudgetError reports exhaustion of an elapsed, sleep, or attempt budget.
+// BudgetError reports exhaustion of an elapsed, sleep, attempt, or shared-work budget.
 type BudgetError struct {
 	Kind   BudgetKind
 	cause  error

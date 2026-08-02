@@ -17,3 +17,10 @@ caller deadline
 `circuit-breaker`, queue schedulers, or idempotency storage. Avoid nested
 automatic retries in HTTP clients, database drivers, or SDKs unless their
 combined attempt and elapsed bounds are calculated explicitly.
+
+When retry and hedge are nested, both must enable their resilience-budget mode
+and receive the same scoped context. The outer executor owns the current
+physical attempt; the inner executor reuses it, while every retry or hedge asks
+the shared scope for a new additional-work permit. This changes the upper bound
+from an accidental `(retries + 1) * (hedges + 1)` to the original attempt plus
+the configured shared additional-work allowance.

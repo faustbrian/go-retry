@@ -94,7 +94,7 @@ func TestObserverBoundsEveryEnumValue(t *testing.T) {
 	}
 	for _, reason := range []retry.Reason{"", retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted,
 		retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget, retry.ReasonAttemptBudget,
-		retry.ReasonClassifierFailure, retry.ReasonSleeperFailure, "hostile"} {
+		retry.ReasonClassifierFailure, retry.ReasonSleeperFailure, retry.ReasonWorkBudget, "hostile"} {
 		observer.Observe(retry.Observation{Reason: reason})
 	}
 }

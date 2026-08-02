@@ -14,6 +14,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Added
 
+- Opt-in consumption of the shared `resilience` work budget, with coordinated
+  retry lineage, local-denial errors, and retry-plus-hedge amplification proof.
 - Explicit bounded retry policies and generic value execution.
 - Nine deterministic and jittered backoff strategy families.
 - Typed terminal errors, bounded history, and delay hints.

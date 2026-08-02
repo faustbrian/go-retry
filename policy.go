@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"time"
+
+	"github.com/faustbrian/golib/pkg/resilience"
 )
 
 // ErrInvalidPolicy identifies contradictory, implicit, or unbounded policies.
@@ -71,11 +73,31 @@ type Config struct {
 	Classifier     Classifier
 	Observer       Observer
 	HistoryLimit   uint
+	// UseResilienceBudget consumes the shared work-amplification scope attached
+	// to the execution context. Existing standalone behavior is unchanged when false.
+	UseResilienceBudget bool
 }
 
 // Policy is an immutable, explicitly bounded retry policy.
 type Policy struct {
 	config Config
+}
+
+func (policy *Policy) initialWorkContext(ctx context.Context) (context.Context, resilience.Attempt, resilience.Permit, error) {
+	if !policy.config.UseResilienceBudget {
+		return ctx, resilience.Attempt{}, nil, nil
+	}
+	if attempt, ok := resilience.AttemptFromContext(ctx); ok {
+		return ctx, attempt, nil, nil
+	}
+	return resilience.AdmitAttempt(ctx, resilience.OriginOriginal, 0, policy.config.Clock.Now())
+}
+
+func (policy *Policy) retryWorkContext(ctx context.Context, parent resilience.Attempt) (context.Context, resilience.Attempt, resilience.Permit, error) {
+	if !policy.config.UseResilienceBudget {
+		return ctx, resilience.Attempt{}, nil, nil
+	}
+	return resilience.AdmitAttempt(ctx, resilience.OriginRetry, parent.Ordinal, policy.config.Clock.Now())
 }
 
 // NewPolicy validates and copies config.

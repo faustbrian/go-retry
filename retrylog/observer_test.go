@@ -60,7 +60,7 @@ func TestObserverBoundsUnknownEnums(t *testing.T) {
 	classifications := []retry.Classification{0, retry.ClassificationPermanent, retry.ClassificationRetryable, 99}
 	reasons := []retry.Reason{"", retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted,
 		retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget, retry.ReasonAttemptBudget,
-		retry.ReasonClassifierFailure, retry.ReasonSleeperFailure, "hostile"}
+		retry.ReasonClassifierFailure, retry.ReasonSleeperFailure, retry.ReasonWorkBudget, "hostile"}
 	for _, classification := range classifications {
 		observer.Observe(retry.Observation{Classification: classification})
 	}

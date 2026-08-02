@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/faustbrian/golib/pkg/resilience"
 )
 
 // Reason identifies why execution stopped.
@@ -29,6 +31,8 @@ const (
 	ReasonClassifierFailure Reason = "classifier_failure"
 	// ReasonSleeperFailure identifies a non-context sleeper failure.
 	ReasonSleeperFailure Reason = "sleeper_failure"
+	// ReasonWorkBudget identifies local denial by the shared amplification budget.
+	ReasonWorkBudget Reason = "work_budget"
 )
 
 // Attempt records bounded failure metadata. It never retains operation values.
@@ -92,6 +96,12 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 	result := Result{}
 	totalSleep := time.Duration(0)
 	previousDelay := time.Duration(0)
+	workCtx, workAttempt, workPermit, workErr := policy.initialWorkContext(ctx)
+	if workErr != nil {
+		result = finish(policy, start, result, ReasonWorkBudget)
+		observe(policy, Observation{Elapsed: result.Elapsed, Reason: result.Reason})
+		return zero, result, &BudgetError{Kind: BudgetWork, cause: workErr, result: result}
+	}
 
 	for attempt := uint(1); ; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -102,10 +112,11 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 			return zero, result, &BudgetError{Kind: BudgetElapsed, cause: context.DeadlineExceeded, result: result}
 		}
 
-		attemptCtx, cancel, attemptBudget := policy.attemptContext(ctx, start)
-		value, operationErr := operation(attemptCtx)
+		attemptCtx, cancel, attemptBudget := policy.attemptContext(workCtx, start)
+		value, operationErr := invokeOperation(attemptCtx, operation, workPermit)
 		attemptErr := attemptCtx.Err()
 		cancel()
+		workPermit = nil
 		result.Attempts = attempt
 
 		if err := ctx.Err(); err != nil {
@@ -148,7 +159,6 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Classification: classification, Reason: result.Reason})
 			return zero, result, &ExhaustedError{cause: operationErr, result: result}
 		}
-
 		delay := policy.delay(attempt, previousDelay)
 		var hint DelayHint
 		if errors.As(operationErr, &hint) {
@@ -179,7 +189,23 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		}
 		totalSleep = saturatingAdd(totalSleep, delay)
 		previousDelay = delay
+		nextWorkCtx, nextWorkAttempt, nextWorkPermit, admissionErr := policy.retryWorkContext(ctx, workAttempt)
+		if admissionErr != nil {
+			result = finish(policy, start, result, ReasonWorkBudget)
+			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Classification: classification, Reason: result.Reason})
+			return zero, result, &BudgetError{Kind: BudgetWork, cause: admissionErr, result: result}
+		}
+		workCtx = nextWorkCtx
+		workAttempt = nextWorkAttempt
+		workPermit = nextWorkPermit
 	}
+}
+
+func invokeOperation[T any](ctx context.Context, operation func(context.Context) (T, error), permit resilience.Permit) (value T, err error) {
+	if permit != nil {
+		defer func() { _ = permit.Complete() }()
+	}
+	return operation(ctx)
 }
 
 func elapsed(policy *Policy, start time.Time) time.Duration {

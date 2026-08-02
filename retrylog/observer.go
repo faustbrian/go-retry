@@ -70,7 +70,8 @@ func reason(value retry.Reason) string {
 		return "none"
 	case retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted,
 		retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget,
-		retry.ReasonAttemptBudget, retry.ReasonClassifierFailure, retry.ReasonSleeperFailure:
+		retry.ReasonAttemptBudget, retry.ReasonClassifierFailure, retry.ReasonSleeperFailure,
+		retry.ReasonWorkBudget:
 		return string(value)
 	default:
 		return "unknown"

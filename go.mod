@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	github.com/avast/retry-go/v4 v4.7.0
 	github.com/cenkalti/backoff/v5 v5.0.3
+	github.com/faustbrian/golib/pkg/resilience v0.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/metric v1.44.0
