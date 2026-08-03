@@ -44,7 +44,15 @@ func TestNoPackageBackgroundWorkers(t *testing.T) {
 		}()
 	}
 	for range workers {
-		<-entered
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			for _, cancel := range cancels {
+				cancel()
+			}
+			wait.Wait()
+			t.Fatal("worker did not enter the sleeper")
+		}
 	}
 	for _, cancel := range cancels {
 		cancel()

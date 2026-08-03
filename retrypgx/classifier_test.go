@@ -109,6 +109,11 @@ func TestClassifierRetriesTransientConnectionFailures(t *testing.T) {
 			err,
 		)
 	}
+	//lint:ignore SA1012 Nil context behavior is part of the classifier contract.
+	classification, err = classifier.Classify(nil, safeContextFailure{cause: context.Canceled}) //nolint:staticcheck // verifies nil context handling
+	if err != nil || classification != retry.ClassificationRetryable {
+		t.Fatalf("nil caller context = (%v, %v), want retryable", classification, err)
+	}
 }
 
 type safeRetryFailure struct{}

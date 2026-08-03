@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,24 +114,16 @@ func ParseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 	if err != nil {
 		return 0, false
 	}
-	delay := date.Sub(now)
-	if delay < 0 {
-		delay = 0
-	}
-	return delay, true
+	return max(date.Sub(now), 0), true
 }
 
 func parseSeconds(value string) (time.Duration, bool) {
-	seconds := uint64(0)
-	for _, character := range value {
-		if character < '0' || character > '9' {
-			return 0, false
-		}
-		digit := uint64(character - '0')
-		if seconds > (math.MaxUint64-digit)/10 {
-			return time.Duration(math.MaxInt64), true
-		}
-		seconds = seconds*10 + digit
+	if strings.Trim(value, "0123456789") != "" {
+		return 0, false
+	}
+	seconds, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return time.Duration(math.MaxInt64), true
 	}
 	maximumSeconds := uint64(math.MaxInt64 / int64(time.Second))
 	if seconds > maximumSeconds {

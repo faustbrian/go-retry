@@ -47,6 +47,9 @@ func TestObserverRejectsMissingLoggerAndUnboundedPolicyID(t *testing.T) {
 	if _, err := retrylog.New(retrylog.Options{Logger: slog.Default(), PolicyID: strings.Repeat("x", retrylog.MaxPolicyIDLength+1)}); !errors.Is(err, retry.ErrInvalidPolicy) {
 		t.Fatalf("long policy ID error = %v", err)
 	}
+	if _, err := retrylog.New(retrylog.Options{Logger: slog.Default(), PolicyID: strings.Repeat("x", retrylog.MaxPolicyIDLength)}); err != nil {
+		t.Fatalf("maximum policy ID error = %v", err)
+	}
 }
 
 func TestObserverBoundsUnknownEnums(t *testing.T) {

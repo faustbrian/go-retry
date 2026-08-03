@@ -6,6 +6,10 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Fixed
 
+- Zero-unit Fibonacci backoff now returns within a fixed computation bound even
+  when callers supply the largest possible attempt number.
+- The shared resilience dependency now uses an immutable published revision so
+  clean consumers can resolve Retry with workspace resolution disabled.
 - PostgreSQL retry classification now recognizes pgx-safe, closed-connection,
   timeout, truncated-response, and network failures as transient while
   preserving caller cancellation and deadlines as permanent.

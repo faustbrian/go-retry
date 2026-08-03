@@ -103,7 +103,8 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		return zero, result, &BudgetError{Kind: BudgetWork, cause: workErr, result: result}
 	}
 
-	for attempt := uint(1); ; attempt++ {
+	for index := range policy.config.MaxAttempts {
+		attempt := index + 1
 		if err := ctx.Err(); err != nil {
 			return zero, finish(policy, start, result, ReasonCanceled), &CanceledError{cause: err, result: finish(policy, start, result, ReasonCanceled)}
 		}
@@ -116,7 +117,6 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		value, operationErr := invokeOperation(attemptCtx, operation, workPermit)
 		attemptErr := attemptCtx.Err()
 		cancel()
-		workPermit = nil
 		result.Attempts = attempt
 
 		if err := ctx.Err(); err != nil {
@@ -162,8 +162,8 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		delay := policy.delay(attempt, previousDelay)
 		var hint DelayHint
 		if errors.As(operationErr, &hint) {
-			if hinted, ok := hint.RetryDelay(policy.config.Clock.Now()); ok && hinted > delay {
-				delay = policy.boundDelay(hinted)
+			if hinted, ok := hint.RetryDelay(policy.config.Clock.Now()); ok {
+				delay = max(delay, policy.boundDelay(hinted))
 			}
 		}
 		entry.Delay = delay
@@ -199,6 +199,8 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		workAttempt = nextWorkAttempt
 		workPermit = nextWorkPermit
 	}
+
+	return zero, result, fmt.Errorf("%w: retry loop ended without a terminal result", ErrInvalidPolicy)
 }
 
 func invokeOperation[T any](ctx context.Context, operation func(context.Context) (T, error), permit resilience.Permit) (value T, err error) {
@@ -243,9 +245,11 @@ func classify(ctx context.Context, classifier Classifier, err error) (classifica
 }
 
 func observe(policy *Policy, observation Observation) {
-	if policy.config.Observer == nil {
-		return
+	observer := policy.config.Observer
+	if observer != nil {
+		func() {
+			defer func() { _ = recover() }()
+			observer.Observe(observation)
+		}()
 	}
-	defer func() { _ = recover() }()
-	policy.config.Observer.Observe(observation)
 }

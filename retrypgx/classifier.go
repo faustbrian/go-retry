@@ -33,9 +33,16 @@ func (Classifier) Classify(ctx context.Context, err error) (retry.Classification
 			return retry.ClassificationPermanent, nil
 		}
 	}
-	if ctx != nil && ctx.Err() != nil &&
-		errors.Is(err, ctx.Err()) {
-		return retry.ClassificationPermanent, nil
+	switch ctx {
+	case nil:
+	default:
+		switch ctxErr := ctx.Err(); ctxErr {
+		case nil:
+		default:
+			if errors.Is(err, ctxErr) {
+				return retry.ClassificationPermanent, nil
+			}
+		}
 	}
 	if pgconn.SafeToRetry(err) ||
 		pgconn.Timeout(err) ||

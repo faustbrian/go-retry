@@ -4,6 +4,7 @@ package retry
 
 import (
 	"math"
+	"math/bits"
 	"time"
 )
 
@@ -56,14 +57,9 @@ func Polynomial(base, coefficient time.Duration, power uint) Backoff {
 func Fibonacci(unit time.Duration) Backoff {
 	unit = nonNegative(unit)
 	return backoffFunc(func(attempt uint, _ time.Duration, _ Random) time.Duration {
-		if unit == 0 {
-			return 0
-		}
-		if attempt <= 2 {
-			return unit
-		}
-		previous, current := uint64(1), uint64(1)
-		for index := uint(3); index <= attempt; index++ {
+		attempt = min(attempt, maxFibonacciAttempt)
+		previous, current := uint64(0), uint64(1)
+		for index := uint(1); index < attempt; index++ {
 			previous, current = current, previous+current
 			if saturatingMultiply(unit, current) == maxDuration {
 				return maxDuration
@@ -109,12 +105,7 @@ func EqualJitter(backoff Backoff) Backoff {
 // ExponentialJitter applies centered proportional jitter to exponential
 // backoff. Factor is clamped to [0, 1].
 func ExponentialJitter(initial time.Duration, multiplier uint64, factor float64) Backoff {
-	if factor < 0 {
-		factor = 0
-	}
-	if factor > 1 {
-		factor = 1
-	}
+	factor = min(max(factor, 0), 1)
 	exponential := Exponential(initial, multiplier)
 	return backoffFunc(func(attempt uint, previous time.Duration, random Random) time.Duration {
 		delay := exponential.Delay(attempt, previous, random)
@@ -128,52 +119,46 @@ func ExponentialJitter(initial time.Duration, multiplier uint64, factor float64)
 func DecorrelatedJitter(base time.Duration) Backoff {
 	base = nonNegative(base)
 	return backoffFunc(func(_ uint, previous time.Duration, random Random) time.Duration {
-		previous = nonNegative(previous)
-		if previous < base {
-			previous = base
-		}
+		previous = max(nonNegative(previous), base)
 		return randomDuration(base, saturatingMultiply(previous, 3), random)
 	})
 }
 
-const maxDuration = time.Duration(math.MaxInt64)
+const (
+	maxDuration         = time.Duration(math.MaxInt64)
+	maxFibonacciAttempt = uint(93) // F(93) exceeds the maximum duration.
+)
 
 func nonNegative(value time.Duration) time.Duration {
-	if value < 0 {
-		return 0
-	}
-	return value
+	return max(value, 0)
 }
 
 func saturatingAdd(left, right time.Duration) time.Duration {
-	if left >= maxDuration-right {
+	// #nosec G115 -- callers normalize retry durations before saturation.
+	sum, carry := bits.Add64(uint64(left), uint64(right), 0)
+	if carry != 0 || sum>>63 != 0 {
 		return maxDuration
 	}
-	return left + right
+	return time.Duration(sum)
 }
 
 func saturatingMultiply(value time.Duration, multiplier uint64) time.Duration {
-	if value == 0 || multiplier == 0 {
-		return 0
-	}
-	if multiplier > math.MaxInt64 {
+	// #nosec G115 -- callers normalize retry durations before saturation.
+	high, low := bits.Mul64(uint64(value), multiplier)
+	if high != 0 || low>>63 != 0 {
 		return maxDuration
 	}
-	signedMultiplier := time.Duration(multiplier)
-	if signedMultiplier > maxDuration/value {
-		return maxDuration
-	}
-	return value * signedMultiplier
+	return time.Duration(low)
 }
 
 func saturatingPower(base uint64, exponent uint) uint64 {
 	result := uint64(1)
-	for exponent > 0 {
-		if exponent&1 == 1 {
+	for range bits.Len(exponent) {
+		if exponent&1 != 0 {
 			result = saturatingUintMultiply(result, base)
 		}
 		exponent >>= 1
-		if exponent > 0 {
+		if exponent != 0 {
 			base = saturatingUintMultiply(base, base)
 		}
 	}
@@ -181,25 +166,28 @@ func saturatingPower(base uint64, exponent uint) uint64 {
 }
 
 func saturatingUintMultiply(left, right uint64) uint64 {
-	if left != 0 && right > math.MaxUint64/left {
+	high, low := bits.Mul64(left, right)
+	if high != 0 {
 		return math.MaxUint64
 	}
-	return left * right
+	return low
 }
 
 func randomDuration(minimum, maximum time.Duration, random Random) time.Duration {
-	if maximum <= minimum || random == nil {
+	if random == nil {
 		return minimum
 	}
 	span := int64(maximum - minimum)
+	if span == 0 || span>>63 != 0 {
+		return minimum
+	}
 	upper := span
-	if span < math.MaxInt64 {
+	if span != math.MaxInt64 {
 		upper++
 	}
 	offset := random.Int64n(upper)
-	offset %= upper
-	if offset < 0 {
-		offset = -offset
-	}
+	offset = offset % upper
+	sign := offset >> 63
+	offset = (offset ^ sign) - sign
 	return minimum + time.Duration(offset)
 }

@@ -77,6 +77,9 @@ func TestObserverRejectsMissingProviderAndUnboundedPolicyID(t *testing.T) {
 	if _, err := retrytelemetry.New(retrytelemetry.Options{MeterProvider: provider, PolicyID: strings.Repeat("x", retrytelemetry.MaxPolicyIDLength+1)}); !errors.Is(err, retry.ErrInvalidPolicy) {
 		t.Fatalf("long policy ID error = %v", err)
 	}
+	if _, err := retrytelemetry.New(retrytelemetry.Options{MeterProvider: provider, PolicyID: strings.Repeat("x", retrytelemetry.MaxPolicyIDLength)}); err != nil {
+		t.Fatalf("maximum policy ID error = %v", err)
+	}
 }
 
 func TestObserverBoundsEveryEnumValue(t *testing.T) {

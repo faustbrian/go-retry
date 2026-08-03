@@ -149,12 +149,9 @@ func (policy *Policy) delay(attempt uint, previous time.Duration) time.Duration 
 }
 
 func (policy *Policy) boundDelay(delay time.Duration) time.Duration {
-	delay = nonNegative(delay)
-	if delay < policy.config.MinDelay {
-		delay = policy.config.MinDelay
-	}
-	if policy.config.MaxDelay > 0 && delay > policy.config.MaxDelay {
-		delay = policy.config.MaxDelay
+	delay = max(nonNegative(delay), policy.config.MinDelay)
+	if policy.config.MaxDelay != 0 {
+		delay = min(delay, policy.config.MaxDelay)
 	}
 	return delay
 }

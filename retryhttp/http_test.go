@@ -22,6 +22,7 @@ func TestParseRetryAfter(t *testing.T) {
 		ok    bool
 	}{
 		{"120", 2 * time.Minute, true},
+		{"9223372036", 9223372036 * time.Second, true},
 		{"Sun, 19 Jul 2026 12:02:00 GMT", 2 * time.Minute, true},
 		{"Sun, 19 Jul 2026 11:59:00 GMT", 0, true},
 		{" 5 ", 5 * time.Second, true},
@@ -82,6 +83,21 @@ func TestClassifierSupportsExplicitTransportPredicate(t *testing.T) {
 	classification, err = classifier.Classify(context.Background(), errors.New("unknown"))
 	if err != nil || classification != retry.ClassificationPermanent {
 		t.Fatalf("unknown = (%v, %v)", classification, err)
+	}
+}
+
+func TestClassifierCopiesOnlyValidStatusBoundaries(t *testing.T) {
+	t.Parallel()
+
+	classifier := retryhttp.NewClassifier(retryhttp.Options{RetryStatuses: []int{99, 100, 999, 1000}})
+	for status, want := range map[int]retry.Classification{
+		99: retry.ClassificationPermanent, 100: retry.ClassificationRetryable,
+		999: retry.ClassificationRetryable, 1000: retry.ClassificationPermanent,
+	} {
+		got, err := classifier.Classify(context.Background(), retryhttp.StatusError(status, nil, nil))
+		if err != nil || got != want {
+			t.Fatalf("status %d = (%v, %v), want %v", status, got, err, want)
+		}
 	}
 }
 
