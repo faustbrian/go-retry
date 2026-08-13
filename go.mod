@@ -1,6 +1,6 @@
 module github.com/faustbrian/golib/pkg/retry
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/avast/retry-go/v4 v4.7.0

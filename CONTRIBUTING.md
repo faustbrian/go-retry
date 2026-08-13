@@ -1,6 +1,6 @@
 # Contributing
 
-Use Go 1.26.5 or newer within the Go 1 compatibility promise. Keep retry
+Use Go 1.26.6 or newer within the Go 1 compatibility promise. Keep retry
 classification separate from repeat safety and add a failing test before each
 behavior change.
 

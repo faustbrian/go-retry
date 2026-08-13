@@ -1,6 +1,6 @@
 # Compatibility
 
-The module targets Go 1.26.5 and follows Go module semantic-versioning rules.
+The module targets Go 1.26.6 and follows Go module semantic-versioning rules.
 The root package is dependency-light; pgx and OpenTelemetry dependencies enter
 only through adapter packages.
 
