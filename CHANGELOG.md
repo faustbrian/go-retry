@@ -4,6 +4,10 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Documentation
+
+- Link the package README to the repository-wide Golib documentation portal.
+
 ### Fixed
 
 - Zero-unit Fibonacci backoff now returns within a fixed computation bound even
