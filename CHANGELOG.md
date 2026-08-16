@@ -10,6 +10,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Fixed
 
+- Upgrade `golang.org/x/text` to v0.41.0 so the dependency graph no longer
+  contains GO-2026-5970.
 - Zero-unit Fibonacci backoff now returns within a fixed computation bound even
   when callers supply the largest possible attempt number.
 - The shared resilience dependency now uses an immutable published revision so
