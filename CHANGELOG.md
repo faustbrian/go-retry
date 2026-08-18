@@ -8,6 +8,12 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 - Link the package README to the repository-wide Golib documentation portal.
 
+### Changed
+
+- Replace the obsolete owned-module pseudo-version pin with the monorepo's
+  local `v0.0.0` source-proxy coordinate; release tooling continues to emit
+  the exact `v1.0.0` dependency version.
+
 ### Fixed
 
 - Upgrade `golang.org/x/text` to v0.41.0 so the dependency graph no longer
