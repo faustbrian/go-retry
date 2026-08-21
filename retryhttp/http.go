@@ -121,11 +121,11 @@ func parseSeconds(value string) (time.Duration, bool) {
 	if strings.Trim(value, "0123456789") != "" {
 		return 0, false
 	}
-	seconds, err := strconv.ParseUint(value, 10, 64)
+	seconds, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		return time.Duration(math.MaxInt64), true
 	}
-	maximumSeconds := uint64(math.MaxInt64 / int64(time.Second))
+	maximumSeconds := int64(math.MaxInt64 / int64(time.Second))
 	if seconds > maximumSeconds {
 		return time.Duration(math.MaxInt64), true
 	}

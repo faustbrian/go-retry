@@ -16,6 +16,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Fixed
 
+- Parse `Retry-After` delta seconds directly in the signed duration domain so
+  saturation remains explicit without a narrowing integer conversion.
 - Upgrade `golang.org/x/text` to v0.41.0 so the dependency graph no longer
   contains GO-2026-5970.
 - Zero-unit Fibonacci backoff now returns within a fixed computation bound even
