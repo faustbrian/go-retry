@@ -9,7 +9,7 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/failsafe-go/failsafe-go v0.9.6 h1:vPSH2cry0Ee5cnR9wc9qshCDO6jdrMA9elBJNwyo4Uk=
 github.com/failsafe-go/failsafe-go v0.9.6/go.mod h1:IeRpglkcwzKagjDMh90ZhN2l4Ovt3+jemQBUbThag54=
-github.com/faustbrian/go-resilience v1.0.0 h1:7QB9X8a0T+VV5Y8n1NSXi4ajrE4w2RPH1B9littj22g=
+github.com/faustbrian/go-resilience v1.0.0 h1:vO1tTyn9EwzcmPCS+4nJDMspkWxnPCZB4/XS6M2Y9oI=
 github.com/faustbrian/go-resilience v1.0.0/go.mod h1:Mae7tmxMXqaSjuOyhIK8Jjq36oBE64+KOvIaLYh2dp8=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
