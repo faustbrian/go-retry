@@ -6,7 +6,7 @@ import (
 
 	avastretry "github.com/avast/retry-go/v4"
 	backoff "github.com/cenkalti/backoff/v5"
-	retry "github.com/faustbrian/golib/pkg/retry"
+	retry "github.com/faustbrian/go-retry"
 )
 
 func BenchmarkSuccessfulExecution(b *testing.B) {

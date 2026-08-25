@@ -4,12 +4,15 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-25
+
 ### Documentation
 
 - Link the package README to the repository-wide Golib documentation portal.
 
 ### Changed
 
+- Publish the module from its standalone `github.com/faustbrian/go-retry` identity while preserving its documented API and behavior.
 - Replace the obsolete owned-module pseudo-version pin with the monorepo's
   local `v0.0.0` source-proxy coordinate; release tooling continues to emit
   the exact `v1.0.0` dependency version.
@@ -41,3 +44,6 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
   OpenTelemetry adapters.
 - Coverage, fuzz, race, leak, mutation, API, documentation, and benchmark
   gates.
+
+[Unreleased]: https://github.com/faustbrian/go-retry/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/faustbrian/go-retry/releases/tag/v1.0.0

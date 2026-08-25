@@ -5,5 +5,5 @@ The root package is dependency-light; pgx and OpenTelemetry dependencies enter
 only through adapter packages.
 
 Public API compatibility is recorded in `api/baseline.txt`. Intentional public
-changes require a changelog entry and regenerated baseline. Pre-v1 releases may
+changes require a changelog entry and regenerated baseline. Major releases may
 still change API, but migration guidance must accompany breaking changes.

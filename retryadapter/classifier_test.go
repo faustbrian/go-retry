@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
-	"github.com/faustbrian/golib/pkg/retry/retryadapter"
+	retry "github.com/faustbrian/go-retry"
+	"github.com/faustbrian/go-retry/retryadapter"
 )
 
 func TestDomainAdaptersRequireCallerOwnedTransientDecision(t *testing.T) {

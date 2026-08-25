@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
-	"github.com/faustbrian/golib/pkg/retry/retrylog"
+	retry "github.com/faustbrian/go-retry"
+	"github.com/faustbrian/go-retry/retrylog"
 )
 
 func TestObserverLogsOnlyBoundedRetryFields(t *testing.T) {

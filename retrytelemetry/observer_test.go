@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
-	"github.com/faustbrian/golib/pkg/retry/retrytelemetry"
+	retry "github.com/faustbrian/go-retry"
+	"github.com/faustbrian/go-retry/retrytelemetry"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"

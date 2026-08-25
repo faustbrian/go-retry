@@ -3,7 +3,7 @@ package retrylog
 import (
 	"testing"
 
-	"github.com/faustbrian/golib/pkg/retry"
+	"github.com/faustbrian/go-retry"
 )
 
 func TestSharedWorkBudgetReasonRemainsObservable(t *testing.T) {

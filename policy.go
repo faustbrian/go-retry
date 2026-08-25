@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/faustbrian/golib/pkg/resilience"
+	"github.com/faustbrian/go-resilience"
 )
 
 // ErrInvalidPolicy identifies contradictory, implicit, or unbounded policies.

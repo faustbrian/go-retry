@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/golib/pkg/resilience"
-	"github.com/faustbrian/golib/pkg/retry"
+	"github.com/faustbrian/go-resilience"
+	"github.com/faustbrian/go-retry"
 )
 
 func TestRetryConsumesAttachedResilienceBudget(t *testing.T) {

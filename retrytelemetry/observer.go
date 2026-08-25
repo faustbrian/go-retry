@@ -6,12 +6,12 @@ import (
 	"context"
 	"fmt"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
+	retry "github.com/faustbrian/go-retry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
-const scopeName = "github.com/faustbrian/golib/pkg/retry/retrytelemetry"
+const scopeName = "github.com/faustbrian/go-retry/retrytelemetry"
 
 // MaxPolicyIDLength bounds the caller-supplied metric attribute.
 const MaxPolicyIDLength = 128

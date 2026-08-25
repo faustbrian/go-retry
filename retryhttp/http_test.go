@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
-	"github.com/faustbrian/golib/pkg/retry/retryhttp"
+	retry "github.com/faustbrian/go-retry"
+	"github.com/faustbrian/go-retry/retryhttp"
 )
 
 func TestParseRetryAfter(t *testing.T) {

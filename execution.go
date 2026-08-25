@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/faustbrian/golib/pkg/resilience"
+	"github.com/faustbrian/go-resilience"
 )
 
 // Reason identifies why execution stopped.

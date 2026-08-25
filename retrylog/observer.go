@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
+	retry "github.com/faustbrian/go-retry"
 )
 
 // MaxPolicyIDLength bounds the caller-supplied policy identity.

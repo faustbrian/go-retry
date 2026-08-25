@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
+	retry "github.com/faustbrian/go-retry"
 )
 
 var defaultRetryStatuses = []int{

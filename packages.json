@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-retry",
+  "packages": [
+    {
+      "module_directory": ".",
+      "directory": ".",
+      "name": "retry",
+      "import_path": "github.com/faustbrian/go-retry",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "retryadapter",
+      "name": "retryadapter",
+      "import_path": "github.com/faustbrian/go-retry/retryadapter",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "retryhttp",
+      "name": "retryhttp",
+      "import_path": "github.com/faustbrian/go-retry/retryhttp",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "retrylog",
+      "name": "retrylog",
+      "import_path": "github.com/faustbrian/go-retry/retrylog",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "retrypgx",
+      "name": "retrypgx",
+      "import_path": "github.com/faustbrian/go-retry/retrypgx",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    },
+    {
+      "module_directory": ".",
+      "directory": "retrytelemetry",
+      "name": "retrytelemetry",
+      "import_path": "github.com/faustbrian/go-retry/retrytelemetry",
+      "kind": "public",
+      "production": true,
+      "executable": true,
+      "coverage_required": true,
+      "build_required": true,
+      "build_tags": []
+    }
+  ]
+}

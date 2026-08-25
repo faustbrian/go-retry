@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/golib/pkg/retry"
+	retry "github.com/faustbrian/go-retry"
 )
 
 func TestPolicyIsSafeForConcurrentExecution(t *testing.T) {

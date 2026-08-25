@@ -1,7 +1,5 @@
-/coverage.out
-/mutation-results.json
-/dist/
-/.tools/
-*.test
-*.prof
-mutation.log
+.artifacts/
+.tools/
+.gocache*/
+.DS_Store
+coverage.out

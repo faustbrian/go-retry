@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-retry",
+  "go_version": "1.26.6",
+  "modules": [
+    {
+      "directory": ".",
+      "module_path": "github.com/faustbrian/go-retry",
+      "go_version": "1.26.6",
+      "packages": [
+        {
+          "module_directory": ".",
+          "directory": ".",
+          "name": "retry",
+          "import_path": "github.com/faustbrian/go-retry",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "retryadapter",
+          "name": "retryadapter",
+          "import_path": "github.com/faustbrian/go-retry/retryadapter",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "retryhttp",
+          "name": "retryhttp",
+          "import_path": "github.com/faustbrian/go-retry/retryhttp",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "retrylog",
+          "name": "retrylog",
+          "import_path": "github.com/faustbrian/go-retry/retrylog",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "retrypgx",
+          "name": "retrypgx",
+          "import_path": "github.com/faustbrian/go-retry/retrypgx",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "retrytelemetry",
+          "name": "retrytelemetry",
+          "import_path": "github.com/faustbrian/go-retry/retrytelemetry",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        }
+      ],
+      "purpose": "`retry` is a dependency-light foundation for bounded retry execution and backoff. Every policy requires a finite attempt limit, an error classifier, timing dependencies, a backoff strategy, and an operation. The package never assumes the operation is idempotent or safe to repeat.",
+      "lifecycle": "stable",
+      "kind": "public library",
+      "releasable": true,
+      "family": "resilience",
+      "family_label": "Resilience",
+      "family_description": "Explicit admission, isolation, retry, amplification, and failure policies.",
+      "family_order": 5,
+      "version": "v1.0.0",
+      "tag_prefix": "v",
+      "owned_dependencies": [
+        "github.com/faustbrian/go-resilience"
+      ],
+      "reverse_owned_dependencies": [
+        "github.com/faustbrian/go-bulkhead/integration/resilience",
+        "github.com/faustbrian/go-concurrency-limit/integration/resilience",
+        "github.com/faustbrian/go-fault-injection/integration/resilience",
+        "github.com/faustbrian/go-service/integration/adoption",
+        "github.com/faustbrian/go-service/integration/reference-external"
+      ],
+      "external_runtime_dependencies": [
+        "github.com/avast/retry-go/v4",
+        "github.com/cenkalti/backoff/v5",
+        "github.com/jackc/pgx/v5",
+        "go.opentelemetry.io/otel",
+        "go.opentelemetry.io/otel/metric",
+        "go.opentelemetry.io/otel/sdk/metric",
+        "go.uber.org/goleak"
+      ],
+      "required_services": [],
+      "build_tags": [],
+      "test_tags": [],
+      "interoperability_tools": [],
+      "specifications": [],
+      "conformance_corpora": [],
+      "provenance": [],
+      "goal_files": [
+        ".ai/GOAL.md",
+        ".ai/GOAL_HARDEN.md",
+        ".ai/GOAL_RESILIENCE.md",
+        ".ai/GOAL_RESILIENCE_HARDEN.md"
+      ],
+      "goal_status": "implementation-evidence-inventoried",
+      "goal_evidence": [
+        {
+          "file": ".ai/GOAL.md",
+          "requirements_sha256": "eaba07285b3f660d9be8d00f0a681bdcdad1f2cd2c7aa9e9f5515ea1f425bc93",
+          "implementation_evidence": [
+            "CHANGELOG.md",
+            "README.md",
+            "docs/README.md",
+            "docs/compatibility.md"
+          ],
+          "verification_gates": [
+            "format-check",
+            "tidy-check",
+            "safety",
+            "vet",
+            "test",
+            "race",
+            "coverage",
+            "lint",
+            "staticcheck",
+            "vulnerability",
+            "secrets",
+            "licenses",
+            "sbom",
+            "fuzz",
+            "mutation",
+            "nilaway",
+            "docs",
+            "api",
+            "conformance",
+            "interoperability",
+            "benchmark"
+          ],
+          "implementation_status": "implemented-requires-fresh-verification"
+        },
+        {
+          "file": ".ai/GOAL_HARDEN.md",
+          "requirements_sha256": "5537afa37c0214aeaeb92a2ef741593d7ac8bfdb60bf56dd5793c5b63ea52bbc",
+          "implementation_evidence": [
+            "CHANGELOG.md",
+            "README.md",
+            "docs/README.md",
+            "docs/compatibility.md"
+          ],
+          "verification_gates": [
+            "format-check",
+            "tidy-check",
+            "safety",
+            "vet",
+            "test",
+            "race",
+            "coverage",
+            "lint",
+            "staticcheck",
+            "vulnerability",
+            "secrets",
+            "licenses",
+            "sbom",
+            "fuzz",
+            "mutation",
+            "nilaway",
+            "docs",
+            "api",
+            "conformance",
+            "interoperability",
+            "benchmark"
+          ],
+          "implementation_status": "implemented-requires-fresh-verification"
+        },
+        {
+          "file": ".ai/GOAL_RESILIENCE.md",
+          "requirements_sha256": "f2824f4ed3855ec42b313533829690ea4d33a7aa5d3d94e22edc51437d5e9bef",
+          "implementation_evidence": [
+            "CHANGELOG.md",
+            "README.md",
+            "docs/README.md",
+            "docs/compatibility.md"
+          ],
+          "verification_gates": [
+            "format-check",
+            "tidy-check",
+            "safety",
+            "vet",
+            "test",
+            "race",
+            "coverage",
+            "lint",
+            "staticcheck",
+            "vulnerability",
+            "secrets",
+            "licenses",
+            "sbom",
+            "fuzz",
+            "mutation",
+            "nilaway",
+            "docs",
+            "api",
+            "conformance",
+            "interoperability",
+            "benchmark"
+          ],
+          "implementation_status": "implemented-requires-fresh-verification"
+        },
+        {
+          "file": ".ai/GOAL_RESILIENCE_HARDEN.md",
+          "requirements_sha256": "1c0c31d3774b0f6472239ddf0f3d663631b0e5d55dfefb6de6f0a150b9726329",
+          "implementation_evidence": [
+            "CHANGELOG.md",
+            "README.md",
+            "docs/README.md",
+            "docs/compatibility.md"
+          ],
+          "verification_gates": [
+            "format-check",
+            "tidy-check",
+            "safety",
+            "vet",
+            "test",
+            "race",
+            "coverage",
+            "lint",
+            "staticcheck",
+            "vulnerability",
+            "secrets",
+            "licenses",
+            "sbom",
+            "fuzz",
+            "mutation",
+            "nilaway",
+            "docs",
+            "api",
+            "conformance",
+            "interoperability",
+            "benchmark"
+          ],
+          "implementation_status": "implemented-requires-fresh-verification"
+        }
+      ],
+      "gates": {
+        "api_compatibility": true,
+        "benchmarks": true,
+        "conformance": false,
+        "coverage": true,
+        "documentation": true,
+        "fuzz": true,
+        "lint": true,
+        "mutation": true,
+        "race": true,
+        "security": true,
+        "tests": true
+      }
+    }
+  ]
+}

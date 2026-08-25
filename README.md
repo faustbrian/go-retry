@@ -1,5 +1,15 @@
 # retry
 
+[![CI](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml)
+[![CodeQL](https://img.shields.io/badge/CodeQL-required-blue)](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-100%25_required-blue)](CONTRIBUTING.md#verification)
+[![Mutation](https://img.shields.io/badge/mutation-100%25_required-blue)](CONTRIBUTING.md#verification)
+[![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
+[![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-retry.svg)](https://pkg.go.dev/github.com/faustbrian/go-retry)
+[![Release](https://img.shields.io/github/v/release/faustbrian/go-retry?sort=semver)](https://github.com/faustbrian/go-retry/releases)
+[![Go](https://img.shields.io/badge/go-1.26.6-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 `retry` is a dependency-light foundation for bounded retry execution and
 backoff. Every policy requires a finite attempt limit, an error classifier,
 timing dependencies, a backoff strategy, and an operation. The package never
