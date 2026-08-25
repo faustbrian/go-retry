@@ -6,6 +6,10 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Changed
 
+- Reconcile standalone dependency checksums against deterministic current
+  module archives so CI, local verification, and release consumers resolve
+  identical content.
+
 - Harden standalone documentation validation with deterministic spelling and
   link checks, package-specific documentation gates, and repository-local
   contributor guidance.
