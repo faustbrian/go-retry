@@ -30,7 +30,7 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Documentation
 
-- Link the package README to the repository-wide Golib documentation portal.
+- Link the package README to package-owned documentation.
 
 ### Changed
 
