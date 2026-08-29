@@ -1,9 +1,23 @@
-# Documentation map
+# Documentation
 
-Start with [strategies](strategies.md), [idempotency](idempotency.md), and
-[budgets](budgets.md). Adapter users should then read [adapters](adapters.md),
-[composition](composition.md), and [observability](observability.md).
+## Getting started
 
-Operational and adoption material is in [migration](migration.md),
-[operations](operations.md), [compatibility](compatibility.md),
-[FAQ](faq.md), and [verification](verification.md).
+- [Strategy selection](strategies.md)
+- [Idempotency and ownership](idempotency.md)
+- [Budgets and cancellation](budgets.md)
+- [Adapters](adapters.md)
+
+## Composition and operations
+
+- [Composition](composition.md)
+- [Observability](observability.md)
+- [Operations](operations.md)
+- [Migration](migration.md)
+- [Compatibility](compatibility.md)
+- [FAQ](faq.md)
+
+## Maintainers
+
+- [Verification](verification.md)
+- [Contributing](../CONTRIBUTING.md)
+- [Release history](../CHANGELOG.md)

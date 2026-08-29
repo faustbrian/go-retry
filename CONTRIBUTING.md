@@ -6,6 +6,8 @@
 2. Run `make inventory` and the narrow baseline gate for the module.
 3. Identify owned dependencies and reverse dependants in `modules.json`.
 4. Preserve unrelated work and generated/corpus provenance.
+5. Use the released tool selected by [`.golib.yaml`](.golib.yaml); do not add
+   repository-local verification scripts or workflow implementations.
 
 ## Changes
 
