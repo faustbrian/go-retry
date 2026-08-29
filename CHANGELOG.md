@@ -4,6 +4,12 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Changed
+
+- Adopt the released `go-library-tools` v1.0.5 repository contract and remove
+  the duplicated repository-local verification implementation while preserving
+  retry-specific policy, evidence, and fixtures.
+
 ### Documentation
 
 - Replace archived monorepo links and completed execution artifacts with a
