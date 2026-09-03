@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-retry",
+  "module": ".",
+  "package": "retryhttp",
+  "gate": "mutation",
+  "input_digest": "sha256:51539f34e941ff5ad4a4cc4f752d6671e044f819a8e8979b984caf45f1c402ed",
+  "verifier_digest": "sha256:9a9499ff68a8dfd49a0be7995590297a8ee563a1aa226bfd8b9361dc53058108",
+  "result": "passed",
+  "report_digest": "sha256:7c5e23f4e7e3810995ddfc7967862e10b0dfe35cb4c03ae13ef7a9d829dc4f2c",
+  "environment": {
+    "CGO_ENABLED": "1",
+    "GOARCH": "arm64",
+    "GOOS": "darwin",
+    "GOVERSION": "go1.26.6",
+    "gremlins_binary_sha256": "sha256:e05bf25d661b16ab96d6f2e17aed481d393930e0f24205cc341b010f887368a0"
+  },
+  "completed_at": "2026-09-03T09:32:49.50377Z"
+}
