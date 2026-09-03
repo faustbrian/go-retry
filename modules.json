@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "github.com/faustbrian/go-retry",
   "go_version": "1.26.6",
   "modules": [
@@ -120,6 +120,100 @@
       "goal_files": [],
       "goal_status": "not-applicable",
       "goal_evidence": [],
+      "cohesion": {
+        "family": "resilience",
+        "secondary_capabilities": [
+          "database-and-storage",
+          "eventing-and-messaging",
+          "http-and-service-edge",
+          "observability",
+          "resilience-and-admission"
+        ],
+        "responsibility": "Provide bounded retry execution, explicit failure classification, finite time and work budgets, deterministic backoff strategies, and focused transport and observability adapters.",
+        "non_goals": [
+          "Infer whether an operation is safe to repeat, provide idempotency, own application side effects, select a default resilience stack, or hide cancellation and retry budgets."
+        ],
+        "public_package_identifier": "retry",
+        "primary_entry_packages": [
+          "github.com/faustbrian/go-retry"
+        ],
+        "package_selection": {
+          "github.com/faustbrian/go-retry": "Use for explicit bounded retry policies, backoff strategies, failure classification, execution budgets, and typed terminal outcomes.",
+          "github.com/faustbrian/go-retry/retryadapter": "Use to classify queue, webhook, filesystem, or object-storage failures through caller-owned predicates.",
+          "github.com/faustbrian/go-retry/retryhttp": "Use to classify HTTP status and transport failures and honor bounded Retry-After delay hints.",
+          "github.com/faustbrian/go-retry/retrylog": "Use to adapt bounded retry observations to caller-owned slog logging.",
+          "github.com/faustbrian/go-retry/retrypgx": "Use to classify PostgreSQL, pgx, and network failures without overriding caller cancellation.",
+          "github.com/faustbrian/go-retry/retrytelemetry": "Use to adapt bounded retry observations to a caller-owned OpenTelemetry meter provider."
+        },
+        "lifecycle_status": "active",
+        "maturity": "stable",
+        "construction_styles": [
+          "new-config",
+          "new-options",
+          "plain-function"
+        ],
+        "lifecycle_styles": [
+          "stateless"
+        ],
+        "ownership": {
+          "configuration": "caller",
+          "mutable_inputs": [
+            "borrow",
+            "copy"
+          ],
+          "runtime_resources": "none",
+          "background_work": "none"
+        },
+        "optional_owned_dependencies": [],
+        "adapters": [
+          "github.com/faustbrian/go-retry/retryadapter",
+          "github.com/faustbrian/go-retry/retryhttp",
+          "github.com/faustbrian/go-retry/retrylog",
+          "github.com/faustbrian/go-retry/retrypgx",
+          "github.com/faustbrian/go-retry/retrytelemetry"
+        ],
+        "companions": [
+          "github.com/faustbrian/go-bulkhead",
+          "github.com/faustbrian/go-circuit-breaker",
+          "github.com/faustbrian/go-hedge",
+          "github.com/faustbrian/go-idempotency",
+          "github.com/faustbrian/go-rate-limit"
+        ],
+        "supported_go": {
+          "minimum": "1.26.6",
+          "tested": [
+            "1.26.6"
+          ]
+        },
+        "supported_platforms": [
+          "portable-go"
+        ],
+        "supported_backends": [
+          "postgresql"
+        ],
+        "supported_protocols": [
+          "http"
+        ],
+        "documentation": {
+          "readme": "README.md",
+          "api": "https://pkg.go.dev/github.com/faustbrian/go-retry",
+          "adoption": "docs/composition.md",
+          "security": "SECURITY.md",
+          "compatibility": "docs/compatibility.md",
+          "performance": "docs/verification.md",
+          "examples": "example_test.go",
+          "faq": "docs/faq.md",
+          "changelog": "CHANGELOG.md",
+          "pkg_go_dev": "https://pkg.go.dev/github.com/faustbrian/go-retry",
+          "ecosystem_index": "https://github.com/faustbrian/go-library-tools/blob/v1.3.0/docs/ecosystem/README.md"
+        },
+        "known_good_compatibility_sets": [],
+        "delivery": {
+          "implementation": "not-started",
+          "hardening": "not-started",
+          "release": "not-started"
+        }
+      },
       "gates": {
         "api_compatibility": true,
         "benchmarks": true,
