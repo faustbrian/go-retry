@@ -6,11 +6,22 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Changed
 
+- Adopt the `go-library-tools` v1.4.0 schema-v2 cohesion contract and local
+  `make cohesion` gate without changing the retry API or runtime behavior.
+- Pin reusable CI to the v1.4.0 W14 workflow and enforce cohesion metadata in
+  the repository's required CI contract.
+- Correct the recorded `go-resilience` v1.0.0 archive checksum to the published
+  module identity without changing the selected dependency version.
+
 - Adopt the released `go-library-tools` v1.0.5 repository contract and remove
   the duplicated repository-local verification implementation while preserving
   retry-specific policy, evidence, and fixtures.
 
 ### Documentation
+
+- Publish the module's family, capabilities, ownership, lifecycle, supported
+  environments, package selection, and delivery status, and link the README to
+  the immutable v1.4.0 ecosystem index and family guidance.
 
 - Replace archived monorepo links and completed execution artifacts with a
   standalone, human-oriented documentation structure.

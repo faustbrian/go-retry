@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "repository": "github.com/faustbrian/go-retry",
+  "module": ".",
+  "package": "retrytelemetry",
+  "gate": "mutation",
+  "input_digest": "sha256:d514ff324a8aa2c5e3e069b3df6755011b0e2b668a44b23a4f7e3331f929ed56",
+  "verifier_digest": "sha256:9a9499ff68a8dfd49a0be7995590297a8ee563a1aa226bfd8b9361dc53058108",
+  "result": "passed",
+  "report_digest": "sha256:d75ad48a67a7066b07777ad7efae2d4e71d66600405d2c3d2ee5c19411e76761",
+  "environment": {
+    "CGO_ENABLED": "1",
+    "GOARCH": "arm64",
+    "GOOS": "darwin",
+    "GOVERSION": "go1.26.6",
+    "gremlins_binary_sha256": "sha256:e05bf25d661b16ab96d6f2e17aed481d393930e0f24205cc341b010f887368a0"
+  },
+  "completed_at": "2026-09-03T09:36:54.586463Z"
+}

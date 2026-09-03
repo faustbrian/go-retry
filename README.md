@@ -69,6 +69,10 @@ retryable classifies a failure; it does not make a side effect idempotent.
 - [FAQ](docs/faq.md)
 - [Verification](docs/verification.md)
 
+For ecosystem-wide selection and ownership guidance, see the versioned
+[Golib ecosystem index](https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/README.md)
+and its [Resilience family](https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/design-language.md#package-families-and-selection).
+
 ## Boundaries
 
 This module owns no circuit state, rate limits, queues, schedules,
