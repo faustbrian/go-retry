@@ -340,6 +340,123 @@ func TestBudgetArithmeticBoundaries(t *testing.T) {
 	})
 }
 
+func TestStrictBudgetDecisionBoundaries(t *testing.T) {
+	t.Run("elapsed before dispatch at equality", func(t *testing.T) {
+		start := time.Unix(200, 0)
+		clock := &strictBoundarySequenceClock{times: []time.Time{start, start.Add(2 * time.Second), start.Add(2 * time.Second)}}
+		policy := mustStrictBoundaryPolicy(t, Config{
+			Backoff: Constant(0), MaxAttempts: 2, MaxElapsed: 2 * time.Second,
+			Clock: clock, Sleeper: &boundarySleeper{}, Classifier: RetryableClassifier(),
+		})
+		calls := 0
+		result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+			calls++
+			return AttemptResult[struct{}]{Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
+		})
+		assertStrictBoundaryBudget(t, err, BudgetElapsed)
+		if calls != 0 || result.Outcome != OutcomeNotDispatched || result.Retry.Reason != ReasonElapsedBudget {
+			t.Fatalf("calls=%d result=%+v error=%v", calls, result, err)
+		}
+	})
+
+	t.Run("non-deadline attempt context error", func(t *testing.T) {
+		clock := &boundaryClock{now: time.Unix(210, 0), contextErr: errors.New("attempt context warning")}
+		policy := mustStrictBoundaryPolicy(t, Config{
+			Backoff: Constant(0), MaxAttempts: 1, AttemptTimeout: time.Second,
+			Clock: clock, Sleeper: &boundarySleeper{clock: clock},
+			Classifier: ClassifyFunc(func(context.Context, error) (Classification, error) {
+				return ClassificationPermanent, nil
+			}),
+		})
+		operationErr := errors.New("known failure")
+		result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+			return AttemptResult[struct{}]{Outcome: OutcomeKnown}, operationErr
+		})
+		var permanent *PermanentError
+		var budget *BudgetError
+		if !errors.As(err, &permanent) || errors.As(err, &budget) || !errors.Is(err, operationErr) || result.Retry.Reason != ReasonPermanent {
+			t.Fatalf("result=%+v error=%v", result, err)
+		}
+	})
+
+	for _, test := range []struct {
+		name       string
+		maximum    time.Duration
+		elapsed    time.Duration
+		delay      time.Duration
+		wantSleeps int
+	}{
+		{name: "elapsed after failure at equality", maximum: 10 * time.Second, elapsed: 10 * time.Second, delay: 0, wantSleeps: 0},
+		{name: "elapsed delay exactly remaining", maximum: 10 * time.Second, elapsed: 4 * time.Second, delay: 6 * time.Second, wantSleeps: 1},
+		{name: "elapsed delay exceeds remaining", maximum: 10 * time.Second, elapsed: 4 * time.Second, delay: 7 * time.Second, wantSleeps: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &boundaryClock{now: time.Unix(220, 0)}
+			sleeper := &boundarySleeper{clock: clock}
+			policy := mustStrictBoundaryPolicy(t, Config{
+				Backoff: Constant(test.delay), MaxAttempts: 3, MaxElapsed: test.maximum,
+				Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
+			})
+			calls := 0
+			result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+				calls++
+				if calls == 1 {
+					clock.now = clock.now.Add(test.elapsed)
+				}
+				return AttemptResult[struct{}]{Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
+			})
+			assertStrictBoundaryBudget(t, err, BudgetElapsed)
+			if len(sleeper.delays) != test.wantSleeps || result.Retry.Reason != ReasonElapsedBudget {
+				t.Fatalf("calls=%d sleeps=%v result=%+v error=%v", calls, sleeper.delays, result, err)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name       string
+		delays     []time.Duration
+		maximum    time.Duration
+		wantSleeps int
+	}{
+		{name: "sleep total at equality", delays: []time.Duration{4 * time.Second, 0}, maximum: 4 * time.Second, wantSleeps: 1},
+		{name: "sleep delay exactly remaining", delays: []time.Duration{4 * time.Second, 6 * time.Second, 0}, maximum: 10 * time.Second, wantSleeps: 2},
+		{name: "sleep delay exceeds remaining", delays: []time.Duration{4 * time.Second, 7 * time.Second}, maximum: 10 * time.Second, wantSleeps: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clock := &boundaryClock{now: time.Unix(230, 0)}
+			sleeper := &boundarySleeper{clock: clock}
+			policy := mustStrictBoundaryPolicy(t, Config{
+				Backoff: &sequenceBackoff{delays: test.delays}, MaxAttempts: uint(len(test.delays) + 1), MaxSleep: test.maximum,
+				Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
+			})
+			result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+				return AttemptResult[struct{}]{Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
+			})
+			assertStrictBoundaryBudget(t, err, BudgetSleep)
+			if len(sleeper.delays) != test.wantSleeps || result.Retry.Reason != ReasonSleepBudget {
+				t.Fatalf("sleeps=%v result=%+v error=%v", sleeper.delays, result, err)
+			}
+		})
+	}
+}
+
+func assertStrictBoundaryBudget(t *testing.T, err error, want BudgetKind) {
+	t.Helper()
+	var budget *BudgetError
+	if !errors.As(err, &budget) || budget.Kind != want {
+		t.Fatalf("budget error=%v, want %s", err, want)
+	}
+}
+
+func mustStrictBoundaryPolicy(t *testing.T, config Config) *Policy {
+	t.Helper()
+	policy, err := NewPolicyStrict(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return policy
+}
+
 func TestObserverIsInvoked(t *testing.T) {
 	t.Parallel()
 
@@ -401,6 +518,20 @@ type boundaryClock struct {
 	now        time.Time
 	timeout    time.Duration
 	contextErr error
+}
+
+type strictBoundarySequenceClock struct {
+	times []time.Time
+	index int
+}
+
+func (clock *strictBoundarySequenceClock) Now() time.Time {
+	if clock.index >= len(clock.times) {
+		return clock.times[len(clock.times)-1]
+	}
+	now := clock.times[clock.index]
+	clock.index++
+	return now
 }
 
 func (clock *boundaryClock) Now() time.Time { return clock.now }

@@ -5,11 +5,18 @@ attempt work and sleeps. `AttemptTimeout` bounds each attempt. `MaxSleep`
 bounds accumulated sleep, while `MinDelay` and `MaxDelay` clamp each selected
 delay.
 
-The earliest caller cancellation or deadline wins. A caller cancellation
-returns `CanceledError`. A policy elapsed or attempt deadline returns
-`BudgetError`. Delay that cannot fit the remaining elapsed or sleep budget is
-rejected before sleeping. Context-aware sleepers make cancellation observable
-during waits.
+With `DoStrict`, cancellation before dispatch returns `ContextError` with
+`OutcomeNotDispatched`; cancellation between known attempts returns
+`OutcomeKnown`; and cancellation after ambiguous dispatch returns
+`OutcomeUnknown`. A complete known callback result wins a cancellation race.
+Context errors expose only normalized `context.Canceled` or
+`context.DeadlineExceeded`, never a custom cancellation or sleeper message.
+Policy elapsed or attempt deadlines return bounded `BudgetError` values. Delay
+that cannot fit the remaining elapsed or sleep budget is rejected before
+sleeping.
+
+Legacy `Do` and `CanceledError` retain their v1 cancellation precedence and
+cause formatting for compatibility.
 
 Use both attempt and elapsed budgets for remote calls. A finite attempt count
 alone does not limit a blocked operation.

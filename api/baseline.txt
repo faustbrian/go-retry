@@ -8,11 +8,18 @@ CONSTANTS
 const MaxHistoryEntries = 1024
     MaxHistoryEntries is the largest failure history retained by a policy.
 
+const MaxStrictTerminalErrorBytes = 66
+    MaxStrictTerminalErrorBytes bounds every human-readable DoStrict error.
+
 
 VARIABLES
 
 var ErrInvalidPolicy = errors.New("invalid retry policy")
     ErrInvalidPolicy identifies contradictory, implicit, or unbounded policies.
+
+var ErrOutcomeUnknown = errors.New("retry outcome unknown")
+    ErrOutcomeUnknown identifies an operation whose dispatched side-effect
+    outcome cannot be proved. It never implies that replay is safe.
 
 
 FUNCTIONS
@@ -34,6 +41,12 @@ type Attempt struct {
 	Err            error
 }
     Attempt records bounded failure metadata. It never retains operation values.
+
+type AttemptResult[T any] struct {
+	Value   T
+	Outcome Outcome
+}
+    AttemptResult declares the value and side-effect outcome of one attempt.
 
 type Backoff interface {
 	Delay(attempt uint, previous time.Duration, random Random) time.Duration
@@ -165,6 +178,28 @@ type Config struct {
     Config contains all dependencies and bounds for a Policy. MaxAttempts is
     mandatory so no policy can retry forever.
 
+type ContextError struct {
+	// Has unexported fields.
+}
+    ContextError reports a normalized cancellation or deadline boundary without
+    retaining an arbitrary cancellation, sleeper, or operation cause.
+
+func (err *ContextError) Error() string
+    Error returns bounded, stable context or unknown-outcome text.
+
+func (err *ContextError) Is(target error) bool
+    Is matches ErrOutcomeUnknown only for unknown outcomes. Context sentinels
+    remain available through Unwrap.
+
+func (err *ContextError) Outcome() Outcome
+    Outcome returns the machine-readable dispatch outcome.
+
+func (err *ContextError) Result() Result
+    Result returns a defensive copy of terminal retry metadata.
+
+func (err *ContextError) Unwrap() error
+    Unwrap returns only a normalized context sentinel.
+
 type DelayHint interface {
 	RetryDelay(time.Time) (time.Duration, bool)
 }
@@ -203,6 +238,18 @@ type Observer interface {
 }
     Observer receives bounded lifecycle metadata.
 
+type Outcome uint8
+    Outcome describes whether an operation was dispatched and whether its
+    side-effect result is known.
+
+const (
+	// OutcomeNotDispatched means the operation callback was not invoked.
+	OutcomeNotDispatched Outcome = iota
+	// OutcomeKnown means the callback conclusively described its result.
+	OutcomeKnown
+	// OutcomeUnknown means dispatch occurred but the result cannot be proved.
+	OutcomeUnknown
+)
 type PermanentError struct{ Cause error }
     PermanentError explicitly marks a cause as ineligible for retry.
 
@@ -217,6 +264,10 @@ type Policy struct {
 
 func NewPolicy(config Config) (*Policy, error)
     NewPolicy validates and copies config.
+
+func NewPolicyStrict(config Config) (*Policy, error)
+    NewPolicyStrict validates and copies config while rejecting explicitly
+    supplied typed-nil optional collaborators.
 
 type Random interface {
 	Int64n(upper int64) int64
@@ -249,6 +300,10 @@ const (
 	// ReasonWorkBudget identifies local denial by the shared amplification budget.
 	ReasonWorkBudget Reason = "work_budget"
 )
+const ReasonOutcomeUnknown Reason = "outcome_unknown"
+    ReasonOutcomeUnknown identifies a dispatched operation whose result cannot
+    be proved.
+
 type Result struct {
 	Attempts   uint
 	Elapsed    time.Duration
@@ -286,6 +341,22 @@ type Sleeper interface {
 }
     Sleeper waits without owning policy or retry decisions.
 
+type StrictOperation[T any] func(context.Context) (AttemptResult[T], error)
+    StrictOperation executes one attempt and declares whether its outcome is
+    known. It must never label an ambiguous side effect as known.
+
+type StrictResult[T any] struct {
+	Value   T
+	Retry   Result
+	Outcome Outcome
+}
+    StrictResult contains a value only for known success, bounded retry
+    metadata, and the operation dispatch outcome.
+
+func DoStrict[T any](ctx context.Context, policy *Policy, operation StrictOperation[T]) (StrictResult[T], error)
+    DoStrict executes operation under policy without retrying an unknown outcome
+    and returns only bounded human-readable terminal errors.
+
 type SystemClock struct{}
     SystemClock uses the process monotonic wall clock. It contains no global
     mutable state.
@@ -307,6 +378,161 @@ type TimeoutClock interface {
 	WithTimeout(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
     TimeoutClock derives deadline contexts using an injected clock.
+
+package retryhttp // import "github.com/faustbrian/go-retry/adapters/http"
+
+Package retryhttp classifies bounded HTTP response failures and parses
+Retry-After without deciding whether an HTTP operation is safe to repeat.
+Its import path is github.com/faustbrian/go-retry/adapters/http.
+
+CONSTANTS
+
+const (
+	// MaxRetryStatuses bounds explicit status configuration.
+	MaxRetryStatuses = 900
+	// MaxRetryAfterBytes bounds retained Retry-After metadata.
+	MaxRetryAfterBytes = 128
+)
+
+VARIABLES
+
+var ErrInvalidResponse = errors.New("invalid HTTP retry response")
+    ErrInvalidResponse identifies invalid or unbounded HTTP response metadata.
+
+
+FUNCTIONS
+
+func ParseRetryAfter(value string, now time.Time) (time.Duration, bool)
+    ParseRetryAfter parses delta-seconds or an HTTP date. Past dates produce an
+    immediate retry hint. Oversized delta-seconds saturate safely.
+
+
+TYPES
+
+type Classifier struct {
+	// Has unexported fields.
+}
+    Classifier classifies HTTP failures without making idempotency decisions.
+
+func New(options Options) (*Classifier, error)
+    New validates options and copies them into an immutable classifier.
+
+func (classifier *Classifier) Classify(_ context.Context, err error) (retry.Classification, error)
+    Classify implements retry.Classifier. Classification does not make replay
+    safe; the operation owner retains that decision.
+
+type Error struct {
+	// Has unexported fields.
+}
+    Error contains bounded response metadata and preserves an optional cause.
+
+func NewError(statusCode int, header http.Header, cause error) (*Error, error)
+    NewError validates and snapshots only the HTTP metadata needed for retry
+    classification and delay selection.
+
+func (err *Error) Error() string
+    Error returns bounded response status text without formatting the cause.
+
+func (err *Error) RetryDelay(now time.Time) (time.Duration, bool)
+    RetryDelay implements retry.DelayHint.
+
+func (err *Error) StatusCode() int
+    StatusCode returns the validated response status.
+
+func (err *Error) Unwrap() error
+    Unwrap returns the exact caller-provided cause.
+
+type Options struct {
+	RetryStatuses []int
+	Transient     func(error) bool
+}
+    Options configures protocol classification. RetryStatuses replaces the
+    conservative default set. Transient may classify transport errors, but does
+    not assert that replay is safe.
+
+package retryotel // import "github.com/faustbrian/go-retry/adapters/otel"
+
+Package retryotel adapts bounded retry observations to caller-owned
+OpenTelemetry metrics without recording operation errors or values. Its import
+path is github.com/faustbrian/go-retry/adapters/otel.
+
+CONSTANTS
+
+const MaxPolicyIDLength = 128
+    MaxPolicyIDLength bounds the caller-supplied metric attribute.
+
+
+TYPES
+
+type Observer struct {
+	// Has unexported fields.
+}
+    Observer records attempt counts, elapsed time, and selected delays.
+
+func New(options Options) (*Observer, error)
+    New validates options and constructs bounded retry metric instruments.
+
+func (observer *Observer) Observe(observation retry.Observation)
+    Observe records bounded attributes synchronously. A nil or zero observer is
+    a no-op.
+
+type Options struct {
+	MeterProvider metric.MeterProvider
+	PolicyID      string
+}
+    Options configures retry metric instruments.
+
+package retrypostgres // import "github.com/faustbrian/go-retry/adapters/postgres"
+
+Package retrypostgres classifies PostgreSQL failures conservatively without
+deciding whether a transaction or statement is safe to repeat. Its import path
+is github.com/faustbrian/go-retry/adapters/postgres.
+
+TYPES
+
+type Classifier struct{}
+    Classifier conservatively classifies PostgreSQL failures. It owns no
+    resources and its zero value is ready for concurrent use.
+
+func New() Classifier
+    New constructs an immutable PostgreSQL classifier.
+
+func (Classifier) Classify(ctx context.Context, err error) (retry.Classification, error)
+    Classify implements retry.Classifier. Caller cancellation and deadline
+    always take precedence over otherwise transient backend failures.
+
+package retryslog // import "github.com/faustbrian/go-retry/adapters/slog"
+
+Package retryslog adapts bounded retry observations to caller-owned slog
+logging without recording operation errors or values. Its import path is
+github.com/faustbrian/go-retry/adapters/slog.
+
+CONSTANTS
+
+const MaxPolicyIDLength = 128
+    MaxPolicyIDLength bounds the caller-supplied policy identity.
+
+
+TYPES
+
+type Observer struct {
+	// Has unexported fields.
+}
+    Observer logs bounded retry lifecycle fields synchronously.
+
+func New(options Options) (*Observer, error)
+    New validates options and constructs an immutable Observer.
+
+func (observer *Observer) Observe(observation retry.Observation)
+    Observe records one event without operation errors or values. A nil or zero
+    observer is a no-op.
+
+type Options struct {
+	Logger   *slog.Logger
+	Level    slog.Level
+	PolicyID string
+}
+    Options configures structured retry observation logging.
 
 package retryadapter // import "github.com/faustbrian/go-retry/retryadapter"
 
@@ -335,6 +561,9 @@ package retryhttp // import "github.com/faustbrian/go-retry/retryhttp"
 
 Package retryhttp classifies HTTP response failures and parses Retry-After.
 It does not decide whether an HTTP operation is safe to repeat.
+
+Deprecated: use github.com/faustbrian/go-retry/adapters/http. This package
+remains supported through the documented compatibility interval.
 
 FUNCTIONS
 
@@ -387,6 +616,9 @@ package retrylog // import "github.com/faustbrian/go-retry/retrylog"
 Package retrylog adapts bounded retry observations to log/slog, the logging API
 used by log. It never records operation errors or values.
 
+Deprecated: use github.com/faustbrian/go-retry/adapters/slog. This package
+remains supported through the documented compatibility interval.
+
 CONSTANTS
 
 const MaxPolicyIDLength = 128
@@ -418,6 +650,9 @@ package retrypgx // import "github.com/faustbrian/go-retry/retrypgx"
 Package retrypgx classifies PostgreSQL errors by SQLSTATE. It does not decide
 whether a transaction or statement is safe to repeat.
 
+Deprecated: use github.com/faustbrian/go-retry/adapters/postgres. This package
+remains supported through the documented compatibility interval.
+
 TYPES
 
 type Classifier struct{}
@@ -435,6 +670,9 @@ package retrytelemetry // import "github.com/faustbrian/go-retry/retrytelemetry"
 Package retrytelemetry adapts bounded retry observations to the standard
 OpenTelemetry API accepted by telemetry.
 
+Deprecated: use github.com/faustbrian/go-retry/adapters/otel. This package
+remains supported through the documented compatibility interval.
+
 CONSTANTS
 
 const MaxPolicyIDLength = 128
@@ -450,6 +688,10 @@ type Observer struct {
 
 func New(options Options) (*Observer, error)
     New constructs bounded retry metric instruments.
+
+func NewStrict(options Options) (*Observer, error)
+    NewStrict constructs bounded retry metric instruments and rejects an
+    explicitly supplied typed-nil meter provider before invoking it.
 
 func (observer *Observer) Observe(observation retry.Observation)
     Observe records bounded attributes and no operation values or errors.

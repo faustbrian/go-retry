@@ -22,6 +22,54 @@
         },
         {
           "module_directory": ".",
+          "directory": "adapters/http",
+          "name": "retryhttp",
+          "import_path": "github.com/faustbrian/go-retry/adapters/http",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "adapters/otel",
+          "name": "retryotel",
+          "import_path": "github.com/faustbrian/go-retry/adapters/otel",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "adapters/postgres",
+          "name": "retrypostgres",
+          "import_path": "github.com/faustbrian/go-retry/adapters/postgres",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
+          "directory": "adapters/slog",
+          "name": "retryslog",
+          "import_path": "github.com/faustbrian/go-retry/adapters/slog",
+          "kind": "public",
+          "production": true,
+          "executable": true,
+          "coverage_required": true,
+          "build_required": true,
+          "build_tags": []
+        },
+        {
+          "module_directory": ".",
           "directory": "retryadapter",
           "name": "retryadapter",
           "import_path": "github.com/faustbrian/go-retry/retryadapter",
@@ -139,11 +187,15 @@
         ],
         "package_selection": {
           "github.com/faustbrian/go-retry": "Use for explicit bounded retry policies, backoff strategies, failure classification, execution budgets, and typed terminal outcomes.",
+          "github.com/faustbrian/go-retry/adapters/http": "Use for validated HTTP status classification and bounded Retry-After response errors.",
+          "github.com/faustbrian/go-retry/adapters/otel": "Use to adapt bounded retry observations to a caller-owned OpenTelemetry meter provider.",
+          "github.com/faustbrian/go-retry/adapters/postgres": "Use to classify PostgreSQL and transport failures with strict caller-context precedence.",
+          "github.com/faustbrian/go-retry/adapters/slog": "Use to adapt bounded retry observations to caller-owned slog logging.",
           "github.com/faustbrian/go-retry/retryadapter": "Use to classify queue, webhook, filesystem, or object-storage failures through caller-owned predicates.",
-          "github.com/faustbrian/go-retry/retryhttp": "Use to classify HTTP status and transport failures and honor bounded Retry-After delay hints.",
-          "github.com/faustbrian/go-retry/retrylog": "Use to adapt bounded retry observations to caller-owned slog logging.",
-          "github.com/faustbrian/go-retry/retrypgx": "Use to classify PostgreSQL, pgx, and network failures without overriding caller cancellation.",
-          "github.com/faustbrian/go-retry/retrytelemetry": "Use to adapt bounded retry observations to a caller-owned OpenTelemetry meter provider."
+          "github.com/faustbrian/go-retry/retryhttp": "Use only for compatibility with the released permissive HTTP classifier.",
+          "github.com/faustbrian/go-retry/retrylog": "Use only for compatibility with the released flat slog adapter path.",
+          "github.com/faustbrian/go-retry/retrypgx": "Use only for compatibility with the released PostgreSQL precedence.",
+          "github.com/faustbrian/go-retry/retrytelemetry": "Use only for compatibility with the released OpenTelemetry scope."
         },
         "lifecycle_status": "active",
         "maturity": "stable",
@@ -166,6 +218,10 @@
         },
         "optional_owned_dependencies": [],
         "adapters": [
+          "github.com/faustbrian/go-retry/adapters/http",
+          "github.com/faustbrian/go-retry/adapters/otel",
+          "github.com/faustbrian/go-retry/adapters/postgres",
+          "github.com/faustbrian/go-retry/adapters/slog",
           "github.com/faustbrian/go-retry/retryadapter",
           "github.com/faustbrian/go-retry/retryhttp",
           "github.com/faustbrian/go-retry/retrylog",
@@ -209,8 +265,8 @@
         },
         "known_good_compatibility_sets": [],
         "delivery": {
-          "implementation": "not-started",
-          "hardening": "not-started",
+          "implementation": "in-progress",
+          "hardening": "in-progress",
           "release": "not-started"
         }
       },

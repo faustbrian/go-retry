@@ -74,3 +74,16 @@ func TestObserverBoundsUnknownEnums(t *testing.T) {
 		t.Fatalf("output does not bound unknown values: %s", output.String())
 	}
 }
+
+func TestLegacyObserverNilAndZeroReceiversPanic(t *testing.T) {
+	for name, observer := range map[string]*retrylog.Observer{"nil": nil, "zero": {}} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("Observe did not preserve the legacy panic")
+				}
+			}()
+			observer.Observe(retry.Observation{})
+		})
+	}
+}

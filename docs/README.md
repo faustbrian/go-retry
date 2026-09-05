@@ -14,6 +14,8 @@
 - [Operations](operations.md)
 - [Migration](migration.md)
 - [Compatibility](compatibility.md)
+- [Deprecation policy](../DEPRECATION.md)
+- [Security policy](../SECURITY.md)
 - [FAQ](faq.md)
 
 ## Maintainers

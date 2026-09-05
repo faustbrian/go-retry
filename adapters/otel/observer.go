@@ -1,9 +1,4 @@
-// Package retrytelemetry adapts bounded retry observations to the standard
-// OpenTelemetry API accepted by telemetry.
-//
-// Deprecated: use github.com/faustbrian/go-retry/adapters/otel. This package
-// remains supported through the documented compatibility interval.
-package retrytelemetry
+package retryotel
 
 import (
 	"context"
@@ -15,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-const scopeName = "github.com/faustbrian/go-retry/retrytelemetry"
+const scopeName = "github.com/faustbrian/go-retry/adapters/otel"
 
 // MaxPolicyIDLength bounds the caller-supplied metric attribute.
 const MaxPolicyIDLength = 128
@@ -34,9 +29,9 @@ type Observer struct {
 	delay    metric.Float64Histogram
 }
 
-// New constructs bounded retry metric instruments.
+// New validates options and constructs bounded retry metric instruments.
 func New(options Options) (*Observer, error) {
-	if options.MeterProvider == nil {
+	if nilMeterProvider(options.MeterProvider) {
 		return nil, fmt.Errorf("%w: meter provider is required", retry.ErrInvalidPolicy)
 	}
 	if len(options.PolicyID) > MaxPolicyIDLength {
@@ -58,13 +53,21 @@ func New(options Options) (*Observer, error) {
 	return &Observer{policyID: options.PolicyID, attempts: attempts, elapsed: elapsed, delay: delay}, nil
 }
 
-// NewStrict constructs bounded retry metric instruments and rejects an
-// explicitly supplied typed-nil meter provider before invoking it.
-func NewStrict(options Options) (*Observer, error) {
-	if nilMeterProvider(options.MeterProvider) {
-		return nil, fmt.Errorf("%w: meter provider is required", retry.ErrInvalidPolicy)
+// Observe records bounded attributes synchronously. A nil or zero observer is
+// a no-op.
+func (observer *Observer) Observe(observation retry.Observation) {
+	if observer == nil || observer.attempts == nil || observer.elapsed == nil || observer.delay == nil {
+		return
 	}
-	return New(options)
+	attributes := metric.WithAttributes(
+		attribute.String("retry.policy.id", observer.policyID),
+		attribute.String("retry.classification", classification(observation.Classification)),
+		attribute.String("retry.reason", reason(observation.Reason)),
+	)
+	ctx := context.Background()
+	observer.attempts.Add(ctx, 1, attributes)
+	observer.elapsed.Record(ctx, observation.Elapsed.Seconds(), attributes)
+	observer.delay.Record(ctx, observation.NextDelay.Seconds(), attributes)
 }
 
 func nilMeterProvider(provider metric.MeterProvider) bool {
@@ -81,19 +84,6 @@ func nilMeterProvider(provider metric.MeterProvider) bool {
 	}
 }
 
-// Observe records bounded attributes and no operation values or errors.
-func (observer *Observer) Observe(observation retry.Observation) {
-	attributes := metric.WithAttributes(
-		attribute.String("retry.policy.id", observer.policyID),
-		attribute.String("retry.classification", classification(observation.Classification)),
-		attribute.String("retry.reason", reason(observation.Reason)),
-	)
-	ctx := context.Background()
-	observer.attempts.Add(ctx, 1, attributes)
-	observer.elapsed.Record(ctx, observation.Elapsed.Seconds(), attributes)
-	observer.delay.Record(ctx, observation.NextDelay.Seconds(), attributes)
-}
-
 func classification(value retry.Classification) string {
 	switch value {
 	case 0:
@@ -108,14 +98,13 @@ func classification(value retry.Classification) string {
 }
 
 func reason(value retry.Reason) string {
-	//nolint:exhaustive // Legacy observers intentionally map new reasons through the fallback.
 	switch value {
 	case "":
 		return "none"
 	case retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted,
 		retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget,
 		retry.ReasonAttemptBudget, retry.ReasonClassifierFailure, retry.ReasonSleeperFailure,
-		retry.ReasonWorkBudget:
+		retry.ReasonWorkBudget, retry.ReasonOutcomeUnknown:
 		return string(value)
 	default:
 		return "unknown"

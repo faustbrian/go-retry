@@ -146,6 +146,41 @@ func TestRetryAfterOverridesBackoffButStillHonorsMaximumDelay(t *testing.T) {
 	}
 }
 
+func TestLegacyHTTPPermissiveCompatibilitySurface(t *testing.T) {
+	t.Parallel()
+
+	classifier := retryhttp.NewClassifier(retryhttp.Options{RetryStatuses: []int{99, 500, 500, 1000}})
+	classification, err := classifier.Classify(context.Background(), retryhttp.StatusError(500, nil, nil))
+	if err != nil || classification != retry.ClassificationRetryable {
+		t.Fatalf("duplicate accepted status = (%v,%v)", classification, err)
+	}
+	for _, status := range []int{99, 1000} {
+		classification, err = classifier.Classify(context.Background(), retryhttp.StatusError(status, nil, nil))
+		if err != nil || classification != retry.ClassificationPermanent {
+			t.Fatalf("filtered status %d = (%v,%v)", status, classification, err)
+		}
+	}
+
+	oversized := http.Header{"Retry-After": {strings.Repeat("9", 129)}}
+	legacyError := retryhttp.StatusError(99, oversized, errors.New("legacy cause disclosure"))
+	if !strings.Contains(legacyError.Error(), "legacy cause disclosure") {
+		t.Fatalf("legacy error = %q", legacyError.Error())
+	}
+	var delayHint retry.DelayHint
+	if !errors.As(legacyError, &delayHint) {
+		t.Fatal("legacy error lost delay hint")
+	}
+	if delay, ok := delayHint.RetryDelay(time.Time{}); !ok || delay != time.Duration(1<<63-1) {
+		t.Fatalf("legacy oversized Retry-After = (%s,%v)", delay, ok)
+	}
+
+	zeroClassifier := &retryhttp.Classifier{}
+	classification, err = zeroClassifier.Classify(context.Background(), errors.New("unknown"))
+	if err != nil || classification != retry.ClassificationPermanent {
+		t.Fatalf("legacy zero classifier = (%v,%v)", classification, err)
+	}
+}
+
 type fixedClock struct{ now time.Time }
 
 func (clock fixedClock) Now() time.Time { return clock.now }

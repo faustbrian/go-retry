@@ -1,5 +1,8 @@
 // Package retryhttp classifies HTTP response failures and parses Retry-After.
 // It does not decide whether an HTTP operation is safe to repeat.
+//
+// Deprecated: use github.com/faustbrian/go-retry/adapters/http. This package
+// remains supported through the documented compatibility interval.
 package retryhttp
 
 import (

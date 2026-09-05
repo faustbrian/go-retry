@@ -19,6 +19,10 @@ api:
       path: api/baseline.txt
       packages:
         - .
+        - ./adapters/http
+        - ./adapters/otel
+        - ./adapters/postgres
+        - ./adapters/slog
         - ./retryadapter
         - ./retryhttp
         - ./retrylog
@@ -30,7 +34,7 @@ operations:
     steps:
       - type: go-test
         packages: ["."]
-        run: '^TestNoPackageBackgroundWorkers$'
+        run: '^(TestNoPackageBackgroundWorkers|TestDoStrictStartsNoBackgroundWorkers)$'
         count: 10
         timeout: 20m
   - module: .
@@ -51,6 +55,16 @@ operations:
       - type: go-test
         packages: ["."]
         fuzz: '^FuzzPolicyValidationDoesNotAcceptContradictoryDelayBounds$'
+        budget: 2s
+        timeout: 2m
+      - type: go-test
+        packages: ["./adapters/http"]
+        fuzz: '^FuzzParseRetryAfterNeverReturnsNegativeDelay$'
+        budget: 2s
+        timeout: 2m
+      - type: go-test
+        packages: ["./adapters/http"]
+        fuzz: '^FuzzNewErrorBoundsResponseMetadata$'
         budget: 2s
         timeout: 2m
       - type: go-test

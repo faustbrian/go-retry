@@ -16,7 +16,7 @@ timing dependencies, a backoff strategy, and an operation. The package never
 assumes the operation is idempotent or safe to repeat.
 
 ```go
-policy, err := retry.NewPolicy(retry.Config{
+policy, err := retry.NewPolicyStrict(retry.Config{
     Backoff: retry.FullJitter(retry.Exponential(100*time.Millisecond, 2)),
     MaxAttempts: 4,
     MaxElapsed: 3*time.Second,
@@ -30,17 +30,20 @@ if err != nil {
     return err
 }
 
-value, result, err := retry.Do(ctx, policy, func(ctx context.Context) (string, error) {
-    value, err := readOnce(ctx)
-    if isTransient(err) {
-        return "", retry.Retryable(err)
-    }
-    return value, retry.Permanent(err)
+result, err := retry.DoStrict(ctx, policy, func(ctx context.Context) (retry.AttemptResult[string], error) {
+	value, err := readOnce(ctx)
+	if isTransient(err) {
+		return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(err)
+	}
+	return retry.AttemptResult[string]{Value: value, Outcome: retry.OutcomeKnown}, retry.Permanent(err)
 })
 ```
 
-The caller must decide whether `readOnce` is safe to repeat. Marking an error
-retryable classifies a failure; it does not make a side effect idempotent.
+Install the root module with `go get github.com/faustbrian/go-retry@latest`.
+The caller must decide whether `readOnce` is safe to repeat. If dispatch occurs
+but the result cannot be proved, return `OutcomeUnknown`; `DoStrict` stops
+without retrying and callers must reconcile the side effect. Marking an error
+retryable classifies a known failure; it does not make a side effect idempotent.
 
 ## Features
 
@@ -68,6 +71,22 @@ retryable classifies a failure; it does not make a side effect idempotent.
 - [Compatibility](docs/compatibility.md)
 - [FAQ](docs/faq.md)
 - [Verification](docs/verification.md)
+
+## Package map
+
+- `retry` owns strict bounded execution, outcomes, policies, and backoff.
+- `adapters/http` validates HTTP classification and bounded response metadata.
+- `adapters/postgres` classifies PostgreSQL failures with caller-context
+  precedence.
+- `adapters/slog` and `adapters/otel` export bounded observations.
+- `retryadapter` remains the supported generic predicate adapter for queue,
+  webhook, filesystem, and object-storage domains.
+- `retryhttp`, `retrypgx`, `retrylog`, and `retrytelemetry` remain compatibility
+  paths during the documented migration interval.
+
+Use this module when one caller explicitly owns a finite retry policy and the
+replay decision. Do not use it to infer idempotency, hide driver retries, or
+apply one implicit resilience stack across unrelated operations.
 
 For ecosystem-wide selection and ownership guidance, see the versioned
 [Golib ecosystem index](https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/README.md)

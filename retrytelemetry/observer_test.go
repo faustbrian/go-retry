@@ -102,6 +102,19 @@ func TestObserverBoundsEveryEnumValue(t *testing.T) {
 	}
 }
 
+func TestLegacyObserverNilAndZeroReceiversPanic(t *testing.T) {
+	for name, observer := range map[string]*retrytelemetry.Observer{"nil": nil, "zero": {}} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("Observe did not preserve the legacy panic")
+				}
+			}()
+			observer.Observe(retry.Observation{})
+		})
+	}
+}
+
 type errorMeterProvider struct {
 	metric.MeterProvider
 	meter *errorMeter
