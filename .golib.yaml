@@ -55,7 +55,7 @@ operations:
       - type: go-test
         packages: ["."]
         fuzz: '^FuzzPolicyValidationDoesNotAcceptContradictoryDelayBounds$'
-        budget: 2s
+        budget: 100000x
         timeout: 2m
       - type: go-test
         packages: ["./adapters/http"]
