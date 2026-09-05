@@ -1,9 +1,4 @@
-// Package retrylog adapts bounded retry observations to log/slog, the logging
-// API used by log. It never records operation errors or values.
-//
-// Deprecated: use github.com/faustbrian/go-retry/adapters/slog. This package
-// remains supported through the documented compatibility interval.
-package retrylog
+package retryslog
 
 import (
 	"context"
@@ -23,14 +18,14 @@ type Options struct {
 	PolicyID string
 }
 
-// Observer logs bounded retry lifecycle fields.
+// Observer logs bounded retry lifecycle fields synchronously.
 type Observer struct {
 	logger   *slog.Logger
 	level    slog.Level
 	policyID string
 }
 
-// New validates options and constructs an Observer.
+// New validates options and constructs an immutable Observer.
 func New(options Options) (*Observer, error) {
 	if options.Logger == nil {
 		return nil, fmt.Errorf("%w: logger is required", retry.ErrInvalidPolicy)
@@ -41,8 +36,12 @@ func New(options Options) (*Observer, error) {
 	return &Observer{logger: options.Logger, level: options.Level, policyID: options.PolicyID}, nil
 }
 
-// Observe records one event without error messages or operation values.
+// Observe records one event without operation errors or values. A nil or zero
+// observer is a no-op.
 func (observer *Observer) Observe(observation retry.Observation) {
+	if observer == nil || observer.logger == nil {
+		return
+	}
 	observer.logger.LogAttrs(
 		context.Background(), observer.level, "retry observation",
 		slog.String("policy_id", observer.policyID),
@@ -68,14 +67,13 @@ func classification(value retry.Classification) string {
 }
 
 func reason(value retry.Reason) string {
-	//nolint:exhaustive // Legacy observers intentionally map new reasons through the fallback.
 	switch value {
 	case "":
 		return "none"
 	case retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted,
 		retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget,
 		retry.ReasonAttemptBudget, retry.ReasonClassifierFailure, retry.ReasonSleeperFailure,
-		retry.ReasonWorkBudget:
+		retry.ReasonWorkBudget, retry.ReasonOutcomeUnknown:
 		return string(value)
 	default:
 		return "unknown"

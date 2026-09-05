@@ -25,6 +25,22 @@ func BenchmarkSuccessfulExecution(b *testing.B) {
 			_, _, _ = retry.Do(ctx, policy, func(context.Context) (struct{}, error) { return struct{}{}, nil })
 		}
 	})
+	b.Run("retry-strict", func(b *testing.B) {
+		strictPolicy, strictErr := retry.NewPolicyStrict(retry.Config{
+			Backoff: retry.Constant(0), MaxAttempts: 1,
+			Clock: retry.SystemClock{}, Sleeper: retry.SystemSleeper{},
+			Classifier: retry.RetryableClassifier(),
+		})
+		if strictErr != nil {
+			b.Fatal(strictErr)
+		}
+		b.ReportAllocs()
+		for range b.N {
+			_, _ = retry.DoStrict(ctx, strictPolicy, func(context.Context) (retry.AttemptResult[struct{}], error) {
+				return retry.AttemptResult[struct{}]{Outcome: retry.OutcomeKnown}, nil
+			})
+		}
+	})
 	b.Run("cenkalti-backoff-v5", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {

@@ -66,6 +66,57 @@ func TestNoPackageBackgroundWorkers(t *testing.T) {
 	}
 }
 
+func TestDoStrictStartsNoBackgroundWorkers(t *testing.T) {
+	t.Parallel()
+
+	const workers = 64
+	entered := make(chan struct{}, workers)
+	policy, err := retry.NewPolicyStrict(retry.Config{
+		Backoff: retry.Constant(time.Hour), MaxAttempts: 2,
+		Clock: retry.SystemClock{}, Sleeper: signalingSleeper{entered: entered},
+		Classifier: retry.RetryableClassifier(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancels := make([]context.CancelFunc, 0, workers)
+	errorsByWorker := make(chan error, workers)
+	var wait sync.WaitGroup
+	for range workers {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancels = append(cancels, cancel)
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, executionErr := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
+				return retry.AttemptResult[struct{}]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
+			})
+			errorsByWorker <- executionErr
+		}()
+	}
+	for range workers {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			for _, cancel := range cancels {
+				cancel()
+			}
+			wait.Wait()
+			t.Fatal("worker did not enter the sleeper")
+		}
+	}
+	for _, cancel := range cancels {
+		cancel()
+	}
+	wait.Wait()
+	close(errorsByWorker)
+	for executionErr := range errorsByWorker {
+		if !errors.Is(executionErr, context.Canceled) {
+			t.Fatalf("DoStrict error = %v", executionErr)
+		}
+	}
+}
+
 type signalingSleeper struct{ entered chan<- struct{} }
 
 func (sleeper signalingSleeper) Sleep(ctx context.Context, delay time.Duration) error {

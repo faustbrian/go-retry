@@ -250,21 +250,23 @@ type sequenceClock struct {
 
 type nilBackoff struct{}
 
-func (*nilBackoff) Delay(uint, time.Duration, retry.Random) time.Duration { return 0 }
+func (*nilBackoff) Delay(uint, time.Duration, retry.Random) time.Duration {
+	panic("typed-nil backoff invoked")
+}
 
 type nilClassifier struct{}
 
 func (*nilClassifier) Classify(context.Context, error) (retry.Classification, error) {
-	return retry.ClassificationPermanent, nil
+	panic("typed-nil classifier invoked")
 }
 
 type nilSleeper struct{}
 
-func (*nilSleeper) Sleep(context.Context, time.Duration) error { return nil }
+func (*nilSleeper) Sleep(context.Context, time.Duration) error { panic("typed-nil sleeper invoked") }
 
 type nilClock struct{}
 
-func (*nilClock) Now() time.Time { return time.Time{} }
+func (*nilClock) Now() time.Time { panic("typed-nil clock invoked") }
 
 func (clock *sequenceClock) Now() time.Time {
 	clock.mu.Lock()

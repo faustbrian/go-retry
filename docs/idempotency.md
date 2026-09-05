@@ -12,3 +12,10 @@ whether repeating an operation is safe. Before enabling retries, identify:
 Reads are not automatically safe if they trigger locks, billing, audit writes,
 or external calls. Writes are not automatically unsafe if their protocol has a
 verified idempotency contract. That decision stays at the call site.
+
+Use `OutcomeKnown` only when the callback can prove what happened. Use
+`OutcomeUnknown` after dispatch when a response loss, timeout, cancellation, or
+protocol ambiguity prevents that proof. `DoStrict` never retries an unknown
+outcome. Reconcile using the operation's durable identity before deciding
+whether another attempt is safe. `OutcomeNotDispatched` is reserved for
+pre-dispatch termination and must not be returned by callbacks.

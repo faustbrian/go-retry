@@ -4,7 +4,27 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Added
+
+- Add `NewPolicyStrict` and `DoStrict` with explicit known, not-dispatched, and
+  unknown outcomes, bounded terminal errors, and normalized cancellation.
+- Add target-oriented HTTP, PostgreSQL, slog, and OpenTelemetry adapters with
+  their own public type identities.
+- Add `retrytelemetry.NewStrict` for typed-nil meter-provider validation while
+  retaining the legacy instrumentation scope.
+
+### Deprecated
+
+- Prefer `adapters/http`, `adapters/postgres`, `adapters/slog`, and
+  `adapters/otel` over the released flat adapter paths. The old paths remain
+  supported through the documented compatibility interval.
+
 ### Changed
+
+- Make the strict HTTP classifier reject invalid and duplicate statuses and
+  bound retained `Retry-After` metadata without exposing cause text.
+- Give strict PostgreSQL classification caller cancellation and deadline
+  precedence over otherwise transient backend failures.
 
 - Adopt the `go-library-tools` v1.4.0 schema-v2 cohesion contract and local
   `make cohesion` gate without changing the retry API or runtime behavior.
