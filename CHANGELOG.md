@@ -4,6 +4,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-06
+
 ### Added
 
 - Add `NewPolicyStrict` and `DoStrict` with explicit known, not-dispatched, and
@@ -104,5 +106,6 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 - Coverage, fuzz, race, leak, mutation, API, documentation, and benchmark
   gates.
 
-[Unreleased]: https://github.com/faustbrian/go-retry/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/faustbrian/go-retry/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/faustbrian/go-retry/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/faustbrian/go-retry/releases/tag/v1.0.0
