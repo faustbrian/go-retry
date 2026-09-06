@@ -39,6 +39,11 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
   the duplicated repository-local verification implementation while preserving
   retry-specific policy, evidence, and fixtures.
 
+### Fixed
+
+- Use a fixed execution budget for policy-validation fuzzing so a completed
+  run cannot fail solely at the wall-clock budget boundary.
+
 ### Documentation
 
 - Publish the module's family, capabilities, ownership, lifecycle, supported
