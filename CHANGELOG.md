@@ -4,6 +4,10 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Changed
+
+- Require Go 1.27.0 for the module and repository verification.
+
 ## [1.1.0] - 2026-09-06
 
 ### Added
