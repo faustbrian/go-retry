@@ -422,6 +422,10 @@ func assertStrictCarrier(t *testing.T, err error, causes []error) {
 	if outer == nil {
 		t.Fatal("terminal wrapper has no safe carrier")
 	}
+	// The owned carrier stays safe to render even after explicit unwrapping.
+	if text := outer.Error(); !strings.HasPrefix(text, "retry ") || len(text) > retry.MaxStrictTerminalErrorBytes || strings.Contains(text, "secret") {
+		t.Fatalf("safe carrier diagnostic = %q", text)
+	}
 	if len(causes) == 1 {
 		carrier, ok := outer.(interface{ Unwrap() error })
 		//nolint:errorlint // The safe carrier must unwrap to the exact cause.

@@ -44,6 +44,31 @@ func TestFlatHTTPDefaultErrorDoesNotFormatPrivateCause(t *testing.T) {
 	}
 }
 
+func TestFlatHTTPNilAndLiteralValuesKeepDefinedClassification(t *testing.T) {
+	ctx := context.Background()
+	var absent *retryhttp.Classifier
+	if classification, err := absent.Classify(ctx, errors.New("ordinary")); classification != 0 || !errors.Is(err, retry.ErrInvalidPolicy) {
+		t.Fatal("nil classifier did not return invalid policy")
+	}
+	calls := 0
+	classifier := mustFlatClassifier(t, retryhttp.Options{Transient: func(error) bool { calls++; return true }})
+	var absentResponse *retryhttp.Error
+	if classification, err := classifier.Classify(ctx, absentResponse); classification != retry.ClassificationPermanent || err != nil || calls != 0 {
+		t.Fatal("typed-nil response did not remain permanent without a transient callback")
+	}
+	literal := &retryhttp.Error{StatusCode: 503}
+	if classification, err := classifier.Classify(ctx, literal); classification != retry.ClassificationRetryable || err != nil || calls != 0 {
+		t.Fatal("literal status classification changed")
+	}
+	if delay, ok := literal.RetryDelay(time.Time{}); delay != 0 || ok {
+		t.Fatal("literal response invented an unadmitted delay hint")
+	}
+	admitted := mustFlatError(t, 503, http.Header{"Retry-After": {"2"}}, nil)
+	if delay, ok := admitted.RetryDelay(time.Time{}); delay != 2*time.Second || !ok {
+		t.Fatal("admitted response lost its bounded delay hint")
+	}
+}
+
 func TestFlatHTTPAdmissionLimitsAndNamedCompatibility(t *testing.T) {
 	for _, statuses := range [][]int{{99}, {1000}, {500, 500}} {
 		if value, err := retryhttp.NewClassifier(retryhttp.Options{RetryStatuses: statuses}); value != nil || !errors.Is(err, retry.ErrInvalidPolicy) {
