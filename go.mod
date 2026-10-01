@@ -1,4 +1,4 @@
-module github.com/faustbrian/go-retry
+module github.com/faustbrian/go-retry/v2
 
 go 1.27.0
 

@@ -1,7 +1,7 @@
 // Package retryhttp classifies HTTP response failures and parses Retry-After.
 // It does not decide whether an HTTP operation is safe to repeat.
 //
-// Deprecated: use github.com/faustbrian/go-retry/adapters/http. This package
+// Deprecated: use github.com/faustbrian/go-retry/v2/adapters/http. This package
 // remains supported through the documented compatibility interval.
 package retryhttp
 
@@ -9,28 +9,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
+	canonical "github.com/faustbrian/go-retry/v2/adapters/http"
 )
 
-var defaultRetryStatuses = []int{
-	http.StatusRequestTimeout,
-	http.StatusTooEarly,
-	http.StatusTooManyRequests,
-	http.StatusInternalServerError,
-	http.StatusBadGateway,
-	http.StatusServiceUnavailable,
-	http.StatusGatewayTimeout,
-}
+const (
+	// MaxRetryStatuses bounds explicit status configuration.
+	MaxRetryStatuses = canonical.MaxRetryStatuses
+	// MaxRetryAfterBytes bounds retained Retry-After metadata.
+	MaxRetryAfterBytes = canonical.MaxRetryAfterBytes
+)
+
+// ErrInvalidResponse identifies invalid or unbounded HTTP response metadata.
+var ErrInvalidResponse = canonical.ErrInvalidResponse
 
 // Options configures protocol classification. RetryStatuses replaces the
-// conservative default set. Transient may classify transport errors, but does
-// not assert that replay is safe.
+// conservative default set. Transient does not assert that replay is safe.
 type Options struct {
 	RetryStatuses []int
 	Transient     func(error) bool
@@ -38,33 +35,38 @@ type Options struct {
 
 // Classifier classifies HTTP failures without making idempotency decisions.
 type Classifier struct {
-	statuses  map[int]struct{}
+	inner     *canonical.Classifier
 	transient func(error) bool
 }
 
-// NewClassifier copies options into an immutable classifier.
-func NewClassifier(options Options) *Classifier {
-	statuses := options.RetryStatuses
-	if statuses == nil {
-		statuses = defaultRetryStatuses
+// NewClassifier validates and copies options through the canonical admission owner.
+func NewClassifier(options Options) (*Classifier, error) {
+	inner, err := canonical.New(canonical.Options{RetryStatuses: options.RetryStatuses, Transient: options.Transient})
+	if err != nil {
+		return nil, err
 	}
-	copied := make(map[int]struct{}, len(statuses))
-	for _, status := range statuses {
-		if status >= 100 && status <= 999 {
-			copied[status] = struct{}{}
-		}
-	}
-	return &Classifier{statuses: copied, transient: options.Transient}
+	return &Classifier{inner: inner, transient: options.Transient}, nil
 }
 
-// Classify implements retry.Classifier.
-func (classifier *Classifier) Classify(_ context.Context, err error) (retry.Classification, error) {
+// Classify implements retry.Classifier. An unconfigured zero value is permanent.
+func (classifier *Classifier) Classify(ctx context.Context, err error) (retry.Classification, error) {
+	if classifier == nil {
+		return 0, fmt.Errorf("%w: classifier is nil", retry.ErrInvalidPolicy)
+	}
+	if classifier.inner == nil {
+		return retry.ClassificationPermanent, nil
+	}
 	var responseError *Error
 	if errors.As(err, &responseError) {
-		if _, ok := classifier.statuses[responseError.StatusCode]; ok {
-			return retry.ClassificationRetryable, nil
+		if responseError == nil {
+			return retry.ClassificationPermanent, nil
 		}
-		return retry.ClassificationPermanent, nil
+		response, admissionErr := canonical.NewError(responseError.StatusCode, nil, responseError.cause)
+		if admissionErr != nil {
+			//nolint:nilerr // Invalid mutable flat statuses classify permanent, not transport failure.
+			return retry.ClassificationPermanent, nil
+		}
+		return classifier.inner.Classify(ctx, response)
 	}
 	if classifier.transient != nil && classifier.transient(err) {
 		return retry.ClassificationRetryable, nil
@@ -72,67 +74,39 @@ func (classifier *Classifier) Classify(_ context.Context, err error) (retry.Clas
 	return retry.ClassificationPermanent, nil
 }
 
-// Error contains bounded response metadata and preserves an optional cause.
+// Error keeps the flat package's named identity and mutable status field.
+// Constructor metadata is bounded; cause traversal is explicitly caller-owned.
 type Error struct {
 	StatusCode int
-	retryAfter string
 	cause      error
+	response   *canonical.Error
 }
 
-func (err *Error) Error() string {
-	if err.cause == nil {
-		return fmt.Sprintf("HTTP status %d", err.StatusCode)
-	}
-	return fmt.Sprintf("HTTP status %d: %v", err.StatusCode, err.cause)
-}
-
+// Error returns bounded status text without formatting the cause.
+func (err *Error) Error() string { return fmt.Sprintf("HTTP status %d", err.StatusCode) }
 func (err *Error) Unwrap() error { return err.cause }
 
-// RetryDelay implements retry.DelayHint.
+// RetryDelay implements retry.DelayHint using the admitted header snapshot.
 func (err *Error) RetryDelay(now time.Time) (time.Duration, bool) {
-	return ParseRetryAfter(err.retryAfter, now)
-}
-
-// StatusError constructs a bounded HTTP error. Only Retry-After is retained
-// from header; response bodies and other headers remain caller-owned.
-func StatusError(statusCode int, header http.Header, cause error) error {
-	retryAfter := ""
-	if header != nil {
-		retryAfter = header.Get("Retry-After")
+	if err.response == nil {
+		return 0, false
 	}
-	return &Error{StatusCode: statusCode, retryAfter: retryAfter, cause: cause}
+	return err.response.RetryDelay(now)
 }
 
-// ParseRetryAfter parses delta-seconds or an HTTP date. Past dates produce an
-// immediate retry hint. Oversized delta-seconds saturate safely.
+// StatusError validates status and header bytes without truncating Retry-After.
+// Only retry metadata is retained; response bodies and other headers remain caller-owned.
+func StatusError(statusCode int, header http.Header, cause error) (*Error, error) {
+	response, err := canonical.NewError(statusCode, header, cause)
+	if err != nil {
+		return nil, err
+	}
+	return &Error{StatusCode: statusCode, cause: cause, response: response}, nil
+}
+
+// ParseRetryAfter parses delta-seconds or an HTTP date using the canonical parser.
 func ParseRetryAfter(value string, now time.Time) (time.Duration, bool) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, false
-	}
-	if seconds, ok := parseSeconds(value); ok {
-		return seconds, true
-	}
-	date, err := http.ParseTime(value)
-	if err != nil {
-		return 0, false
-	}
-	return max(date.Sub(now), 0), true
-}
-
-func parseSeconds(value string) (time.Duration, bool) {
-	if strings.Trim(value, "0123456789") != "" {
-		return 0, false
-	}
-	seconds, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return time.Duration(math.MaxInt64), true
-	}
-	maximumSeconds := int64(math.MaxInt64 / int64(time.Second))
-	if seconds > maximumSeconds {
-		return time.Duration(math.MaxInt64), true
-	}
-	return time.Duration(seconds) * time.Second, true
+	return canonical.ParseRetryAfter(value, now)
 }
 
 var _ retry.Classifier = (*Classifier)(nil)

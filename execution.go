@@ -96,12 +96,19 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 	result := Result{}
 	totalSleep := time.Duration(0)
 	previousDelay := time.Duration(0)
+	var undispatchedPermit resilience.Permit
+	defer func() {
+		if undispatchedPermit != nil {
+			_ = undispatchedPermit.Complete()
+		}
+	}()
 	workCtx, workAttempt, workPermit, workErr := policy.initialWorkContext(ctx)
 	if workErr != nil {
 		result = finish(policy, start, result, ReasonWorkBudget)
 		observe(policy, Observation{Elapsed: result.Elapsed, Reason: result.Reason})
 		return zero, result, &BudgetError{Kind: BudgetWork, cause: workErr, result: result}
 	}
+	undispatchedPermit = workPermit
 
 	for index := range policy.config.MaxAttempts {
 		attempt := index + 1
@@ -114,9 +121,13 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		}
 
 		attemptCtx, cancel, attemptBudget := policy.attemptContext(workCtx, start)
-		value, operationErr := invokeOperation(attemptCtx, operation, workPermit)
-		attemptErr := attemptCtx.Err()
-		cancel()
+		dispatchPermit := undispatchedPermit
+		undispatchedPermit = nil
+		value, operationErr, attemptErr := func() (T, error, error) {
+			defer cancel()
+			value, err := invokeOperation(attemptCtx, operation, dispatchPermit)
+			return value, err, attemptCtx.Err()
+		}()
 		result.Attempts = attempt
 
 		if err := ctx.Err(); err != nil {
@@ -144,7 +155,7 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		}
 		if classification != ClassificationRetryable && classification != ClassificationPermanent {
 			result = finish(policy, start, result, ReasonClassifierFailure)
-			return zero, result, &PermanentError{Cause: fmt.Errorf("classifier returned invalid classification %d: %w", classification, operationErr)}
+			return zero, result, &PermanentError{Cause: strictSingleCause("retry classifier returned invalid classification", operationErr)}
 		}
 		entry := Attempt{Attempt: attempt, Elapsed: elapsed(policy, start), Classification: classification, Err: operationErr}
 		if classification == ClassificationPermanent {
@@ -197,7 +208,7 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		}
 		workCtx = nextWorkCtx
 		workAttempt = nextWorkAttempt
-		workPermit = nextWorkPermit
+		undispatchedPermit = nextWorkPermit
 	}
 
 	return zero, result, fmt.Errorf("%w: retry loop ended without a terminal result", ErrInvalidPolicy)
@@ -238,7 +249,11 @@ func appendHistory(policy *Policy, result Result, attempt Attempt) Result {
 func classify(ctx context.Context, classifier Classifier, err error) (classification Classification, classifierErr error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			classifierErr = fmt.Errorf("classifier panic: %v", recovered)
+			if cause, ok := recovered.(error); ok {
+				classifierErr = strictSingleCause("retry classifier panicked", cause)
+			} else {
+				classifierErr = errors.New("retry classifier panicked")
+			}
 		}
 	}()
 	return classifier.Classify(ctx, err)

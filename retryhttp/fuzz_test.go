@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-retry/retryhttp"
+	"github.com/faustbrian/go-retry/v2/retryhttp"
 )
 
 func FuzzParseRetryAfterNeverReturnsNegativeDelay(fuzz *testing.F) {

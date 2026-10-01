@@ -21,8 +21,10 @@ observation nor sink arguments after the call returns. Executing through `Do`
 or `DoStrict` adds the engine's observer-panic isolation described above.
 
 The successor OTel scope is
-`github.com/faustbrian/go-retry/adapters/otel`. The compatibility
-`retrytelemetry` package retains its original scope. The caller creates, owns,
+`github.com/faustbrian/go-retry/v2/adapters/otel`. The compatibility
+`retrytelemetry` package retains its original
+`github.com/faustbrian/go-retry/retrytelemetry` scope across the v2 upgrade.
+The caller creates, owns,
 flushes, and shuts down the logger or meter provider after all synchronous
 observer calls finish.
 

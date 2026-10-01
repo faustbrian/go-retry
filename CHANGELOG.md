@@ -4,9 +4,30 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-01
+
 ### Changed
 
-- Require Go 1.27.0 for the module and repository verification.
+- Move the module and its ten public packages to the required `/v2` import
+  suffix and require Go 1.27.0. Source remains on main.
+- Make default marking and terminal errors expose only safe categories while
+  retaining explicit machine cause traversal and legacy dispatch ordering.
+- Make flat HTTP constructors return admission errors for invalid status sets,
+  status codes, and over-limit Retry-After metadata through the canonical HTTP
+  owner; preserve distinct flat types and the public integer status field.
+- Reject direct Retry-After parser inputs over 128 raw bytes before trimming
+  or parsing, while retaining the inclusive boundary and accepted grammar.
+
+### Fixed
+
+- Complete legacy retry work permits when cancellation, an elapsed-budget exit,
+  or a panic prevents dispatch, and cancel each derived attempt context when
+  its operation or permit completion panics, preserving error and panic identity.
+
+### Security
+
+- Document execution and adapter trust boundaries and explicit caller-owned
+  residual risks for the v2 API family.
 
 ## [1.1.0] - 2026-09-06
 
@@ -115,6 +136,7 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 - Coverage, fuzz, race, leak, mutation, API, documentation, and benchmark
   gates.
 
-[Unreleased]: https://github.com/faustbrian/go-retry/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/faustbrian/go-retry/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/faustbrian/go-retry/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/faustbrian/go-retry/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/faustbrian/go-retry/releases/tag/v1.0.0

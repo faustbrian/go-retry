@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	retryhttp "github.com/faustbrian/go-retry/adapters/http"
+	retryhttp "github.com/faustbrian/go-retry/v2/adapters/http"
 	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/retryhttp" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	legacy "github.com/faustbrian/go-retry/v2/retryhttp" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 )
 
 func FuzzParseRetryAfterNeverReturnsNegativeDelay(f *testing.F) {

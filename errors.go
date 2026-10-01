@@ -9,7 +9,7 @@ import (
 // RetryableError explicitly marks a cause as eligible for bounded retry.
 type RetryableError struct{ Cause error }
 
-func (err *RetryableError) Error() string { return fmt.Sprintf("retryable: %v", err.Cause) }
+func (err *RetryableError) Error() string { return "retryable error" }
 func (err *RetryableError) Unwrap() error { return err.Cause }
 
 // Retryable marks err as eligible for an explicitly configured retry policy.
@@ -23,7 +23,7 @@ func Retryable(err error) error {
 // PermanentError explicitly marks a cause as ineligible for retry.
 type PermanentError struct{ Cause error }
 
-func (err *PermanentError) Error() string { return fmt.Sprintf("permanent: %v", err.Cause) }
+func (err *PermanentError) Error() string { return "permanent error" }
 func (err *PermanentError) Unwrap() error { return err.Cause }
 
 // Permanent marks err as ineligible for retry.
@@ -53,7 +53,7 @@ type ExhaustedError struct {
 }
 
 func (err *ExhaustedError) Error() string {
-	return fmt.Sprintf("retry attempts exhausted: %v", err.cause)
+	return "retry attempts exhausted"
 }
 func (err *ExhaustedError) Unwrap() error { return err.cause }
 
@@ -66,7 +66,7 @@ type CanceledError struct {
 	result Result
 }
 
-func (err *CanceledError) Error() string { return fmt.Sprintf("retry canceled: %v", err.cause) }
+func (err *CanceledError) Error() string { return "retry canceled" }
 func (err *CanceledError) Unwrap() error { return err.cause }
 
 // Result returns a defensive copy of terminal metadata.
@@ -94,7 +94,12 @@ type BudgetError struct {
 }
 
 func (err *BudgetError) Error() string {
-	return fmt.Sprintf("retry %s budget exhausted: %v", err.Kind, err.cause)
+	switch err.Kind {
+	case BudgetElapsed, BudgetSleep, BudgetAttempt, BudgetWork:
+		return fmt.Sprintf("retry %s budget exhausted", err.Kind)
+	default:
+		return "retry budget exhausted"
+	}
 }
 func (err *BudgetError) Unwrap() error { return err.cause }
 

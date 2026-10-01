@@ -1,7 +1,7 @@
 // Package retrytelemetry adapts bounded retry observations to the standard
 // OpenTelemetry API accepted by telemetry.
 //
-// Deprecated: use github.com/faustbrian/go-retry/adapters/otel. This package
+// Deprecated: use github.com/faustbrian/go-retry/v2/adapters/otel. This package
 // remains supported through the documented compatibility interval.
 package retrytelemetry
 
@@ -10,11 +10,12 @@ import (
 	"fmt"
 	"reflect"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
+// Retain the released instrumentation identity across the Go module migration.
 const scopeName = "github.com/faustbrian/go-retry/retrytelemetry"
 
 // MaxPolicyIDLength bounds the caller-supplied metric attribute.

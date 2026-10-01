@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
-	retryslog "github.com/faustbrian/go-retry/adapters/slog"
+	retry "github.com/faustbrian/go-retry/v2"
+	retryslog "github.com/faustbrian/go-retry/v2/adapters/slog"
 
 	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/retrylog" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	legacy "github.com/faustbrian/go-retry/v2/retrylog" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 )
 
 func TestNewValidatesLoggerAndPolicyID(t *testing.T) {
@@ -259,7 +259,7 @@ func TestObserverPropagatesDirectSinkPanicSynchronously(t *testing.T) {
 func TestSuccessorSlogTypesOwnReflectionIdentity(t *testing.T) {
 	t.Parallel()
 
-	const want = "github.com/faustbrian/go-retry/adapters/slog"
+	const want = "github.com/faustbrian/go-retry/v2/adapters/slog"
 	for _, value := range []any{retryslog.Options{}, retryslog.Observer{}} {
 		if got := reflect.TypeOf(value).PkgPath(); got != want {
 			t.Fatalf("%T PkgPath = %q", value, got)

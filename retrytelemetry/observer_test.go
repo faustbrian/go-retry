@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
-	"github.com/faustbrian/go-retry/retrytelemetry"
+	retry "github.com/faustbrian/go-retry/v2"
+	"github.com/faustbrian/go-retry/v2/retrytelemetry"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -35,6 +35,9 @@ func TestObserverRecordsBoundedRetryMetrics(t *testing.T) {
 	}
 	if len(collected.ScopeMetrics) != 1 || len(collected.ScopeMetrics[0].Metrics) != 3 {
 		t.Fatalf("metrics = %+v", collected.ScopeMetrics)
+	}
+	if got := collected.ScopeMetrics[0].Scope.Name; got != "github.com/faustbrian/go-retry/retrytelemetry" {
+		t.Fatalf("released compatibility scope = %q", got)
 	}
 	for _, metric := range collected.ScopeMetrics[0].Metrics {
 		if metric.Name != "retry.attempts" && metric.Name != "retry.elapsed" && metric.Name != "retry.delay" {

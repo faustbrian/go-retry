@@ -22,6 +22,12 @@ or target-oriented observability identity without changing the legacy paths.
 See [`docs/migration.md`](docs/migration.md) for exact behavior and type-identity
 differences.
 
+The planned v2 retains all named compatibility packages and their distinct
+type identities. Flat HTTP constructors gain explicit admission-error returns
+and share canonical input bounds; default errors no longer format causes.
+These necessary security changes are documented major-version migration, not
+removal of the retained paths. Published v1 behavior remains historical.
+
 Removal cannot occur before the longer of 180 days after the successors become
 publicly consumable or two stable minor root-module releases that contain both
 old and new paths. It also requires owned-consumer migration, clean external

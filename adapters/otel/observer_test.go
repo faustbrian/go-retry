@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
-	retryotel "github.com/faustbrian/go-retry/adapters/otel"
+	retry "github.com/faustbrian/go-retry/v2"
+	retryotel "github.com/faustbrian/go-retry/v2/adapters/otel"
 
 	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	"github.com/faustbrian/go-retry/retrytelemetry" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	"github.com/faustbrian/go-retry/v2/retrytelemetry" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
@@ -50,7 +50,7 @@ func TestObserverRecordsExactMetricsUnderSuccessorScope(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatal(err)
 	}
-	if len(collected.ScopeMetrics) != 1 || collected.ScopeMetrics[0].Scope.Name != "github.com/faustbrian/go-retry/adapters/otel" || len(collected.ScopeMetrics[0].Metrics) != 3 {
+	if len(collected.ScopeMetrics) != 1 || collected.ScopeMetrics[0].Scope.Name != "github.com/faustbrian/go-retry/v2/adapters/otel" || len(collected.ScopeMetrics[0].Metrics) != 3 {
 		t.Fatalf("scope metrics = %+v", collected.ScopeMetrics)
 	}
 	for _, measured := range collected.ScopeMetrics[0].Metrics {
@@ -371,7 +371,7 @@ func TestNewInvokesProviderAndInstrumentConstructorsSynchronously(t *testing.T) 
 func TestSuccessorOTelTypesOwnReflectionIdentity(t *testing.T) {
 	t.Parallel()
 
-	const want = "github.com/faustbrian/go-retry/adapters/otel"
+	const want = "github.com/faustbrian/go-retry/v2/adapters/otel"
 	for _, value := range []any{retryotel.Options{}, retryotel.Observer{}} {
 		if got := reflect.TypeOf(value).PkgPath(); got != want {
 			t.Fatalf("%T PkgPath = %q", value, got)
@@ -514,7 +514,7 @@ func copyAttributes(target map[string]string, values []attribute.KeyValue) {
 }
 
 func equalMetricContent(left, right metricSnapshot) bool {
-	return left.scope == "github.com/faustbrian/go-retry/adapters/otel" && right.scope == "github.com/faustbrian/go-retry/retrytelemetry" && reflect.DeepEqual(left.units, right.units) && reflect.DeepEqual(left.values, right.values) && reflect.DeepEqual(left.attributes, right.attributes)
+	return left.scope == "github.com/faustbrian/go-retry/v2/adapters/otel" && right.scope == "github.com/faustbrian/go-retry/retrytelemetry" && reflect.DeepEqual(left.units, right.units) && reflect.DeepEqual(left.values, right.values) && reflect.DeepEqual(left.attributes, right.attributes)
 }
 
 func classificationName(value retry.Classification) string {

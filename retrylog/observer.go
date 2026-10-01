@@ -1,7 +1,7 @@
 // Package retrylog adapts bounded retry observations to log/slog, the logging
 // API used by log. It never records operation errors or values.
 //
-// Deprecated: use github.com/faustbrian/go-retry/adapters/slog. This package
+// Deprecated: use github.com/faustbrian/go-retry/v2/adapters/slog. This package
 // remains supported through the documented compatibility interval.
 package retrylog
 
@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 )
 
 // MaxPolicyIDLength bounds the caller-supplied policy identity.

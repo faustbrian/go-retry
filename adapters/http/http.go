@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 )
 
 const (
@@ -137,6 +137,9 @@ func (err *Error) RetryDelay(now time.Time) (time.Duration, bool) {
 // ParseRetryAfter parses delta-seconds or an HTTP date. Past dates produce an
 // immediate retry hint. Oversized delta-seconds saturate safely.
 func ParseRetryAfter(value string, now time.Time) (time.Duration, bool) {
+	if len(value) > MaxRetryAfterBytes {
+		return 0, false
+	}
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return 0, false
