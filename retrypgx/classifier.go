@@ -1,7 +1,7 @@
 // Package retrypgx classifies PostgreSQL errors by SQLSTATE. It does not
 // decide whether a transaction or statement is safe to repeat.
 //
-// Deprecated: use github.com/faustbrian/go-retry/adapters/postgres. This
+// Deprecated: use github.com/faustbrian/go-retry/v2/adapters/postgres. This
 // package remains supported through the documented compatibility interval.
 package retrypgx
 
@@ -11,7 +11,7 @@ import (
 	"io"
 	"net"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

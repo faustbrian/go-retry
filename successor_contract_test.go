@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
-	retryhttp "github.com/faustbrian/go-retry/adapters/http"
-	retryotel "github.com/faustbrian/go-retry/adapters/otel"
-	retrypostgres "github.com/faustbrian/go-retry/adapters/postgres"
-	retryslog "github.com/faustbrian/go-retry/adapters/slog"
-	"github.com/faustbrian/go-retry/retryadapter"
+	retry "github.com/faustbrian/go-retry/v2"
+	retryhttp "github.com/faustbrian/go-retry/v2/adapters/http"
+	retryotel "github.com/faustbrian/go-retry/v2/adapters/otel"
+	retrypostgres "github.com/faustbrian/go-retry/v2/adapters/postgres"
+	retryslog "github.com/faustbrian/go-retry/v2/adapters/slog"
+	"github.com/faustbrian/go-retry/v2/retryadapter"
 
 	//lint:ignore SA1019 Legacy compatibility and distinct identity are under test.
-	legacyhttp "github.com/faustbrian/go-retry/retryhttp" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
+	legacyhttp "github.com/faustbrian/go-retry/v2/retryhttp" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
 	//lint:ignore SA1019 Legacy compatibility and distinct identity are under test.
-	legacylog "github.com/faustbrian/go-retry/retrylog" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
+	legacylog "github.com/faustbrian/go-retry/v2/retrylog" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
 	//lint:ignore SA1019 Legacy compatibility and distinct identity are under test.
-	legacypgx "github.com/faustbrian/go-retry/retrypgx" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
+	legacypgx "github.com/faustbrian/go-retry/v2/retrypgx" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
 	//lint:ignore SA1019 Legacy compatibility and distinct identity are under test.
-	legacyotel "github.com/faustbrian/go-retry/retrytelemetry" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
+	legacyotel "github.com/faustbrian/go-retry/v2/retrytelemetry" //nolint:staticcheck // Legacy compatibility and distinct identity are under test.
 )
 
 func TestSuccessorExportedContractsCompileIndependently(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 )
 
 func FuzzBackoffNeverProducesNegativeDelay(fuzz *testing.F) {

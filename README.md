@@ -5,7 +5,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-100%25_required-blue)](CONTRIBUTING.md#verification)
 [![Mutation](https://img.shields.io/badge/mutation-100%25_required-blue)](CONTRIBUTING.md#verification)
 [![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
-[![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-retry.svg)](https://pkg.go.dev/github.com/faustbrian/go-retry)
+[![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-retry/v2.svg)](https://pkg.go.dev/github.com/faustbrian/go-retry/v2)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-retry?sort=semver)](https://github.com/faustbrian/go-retry/releases)
 [![Go](https://img.shields.io/badge/go-1.27.0-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -14,6 +14,11 @@
 backoff. Every policy requires a finite attempt limit, an error classifier,
 timing dependencies, a backoff strategy, and an operation. The package never
 assumes the operation is idempotent or safe to repeat.
+
+Current main prepares v2.0.0 at the `/v2` module path for Go 1.27.0. It is not
+published until its public tag and release exist; published v1.1.0 remains
+available with its historical Go 1.26.6 and diagnostic contracts. See the
+[major-version migration](docs/migration.md) before adopting current source.
 
 ```go
 policy, err := retry.NewPolicyStrict(retry.Config{
@@ -39,7 +44,7 @@ result, err := retry.DoStrict(ctx, policy, func(ctx context.Context) (retry.Atte
 })
 ```
 
-Install the root module with `go get github.com/faustbrian/go-retry@latest`.
+Install the root module with `go get github.com/faustbrian/go-retry/v2@latest`.
 The caller must decide whether `readOnce` is safe to repeat. If dispatch occurs
 but the result cannot be proved, return `OutcomeUnknown`; `DoStrict` stops
 without retrying and callers must reconcile the side effect. Marking an error

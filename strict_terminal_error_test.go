@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/faustbrian/go-resilience"
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 )
 
 func TestContextErrorZeroAndNilReceiversAreTotal(t *testing.T) {
@@ -108,39 +108,39 @@ func TestDoStrictKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) 
 			config := baseConfig(clock, retry.Config{})
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationPermanent, nil })
 			return config
-		}, "permanent: retry operation failed", retry.ReasonPermanent, "", "permanent", []error{cause}, 1},
+		}, "permanent error", retry.ReasonPermanent, "", "permanent", []error{cause}, 1},
 		{"exhausted", func(clock *manualClock) retry.Config {
 			config := baseConfig(clock, retry.Config{})
 			config.MaxAttempts = 1
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationRetryable, nil })
 			return config
-		}, "retry attempts exhausted: retry operation failed", retry.ReasonAttemptsExhausted, "", "exhausted", []error{cause}, 1},
+		}, "retry attempts exhausted", retry.ReasonAttemptsExhausted, "", "exhausted", []error{cause}, 1},
 		{"classifier error", func(clock *manualClock) retry.Config {
 			config := baseConfig(clock, retry.Config{})
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return 0, classifierCause })
 			return config
-		}, "permanent: retry classifier failed", retry.ReasonClassifierFailure, "", "permanent", []error{cause, classifierCause}, 0},
+		}, "permanent error", retry.ReasonClassifierFailure, "", "permanent", []error{cause, classifierCause}, 0},
 		{"invalid classification", func(clock *manualClock) retry.Config {
 			config := baseConfig(clock, retry.Config{})
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return 99, nil })
 			return config
-		}, "permanent: retry classifier failed", retry.ReasonClassifierFailure, "", "permanent", []error{cause}, 0},
+		}, "permanent error", retry.ReasonClassifierFailure, "", "permanent", []error{cause}, 0},
 		{"sleeper", func(clock *manualClock) retry.Config {
 			config := baseConfig(clock, retry.Config{})
 			config.Sleeper = failingSleeper{sleeperCause}
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationRetryable, nil })
 			return config
-		}, "permanent: retry sleeper failed", retry.ReasonSleeperFailure, "", "permanent", []error{sleeperCause}, 1},
+		}, "permanent error", retry.ReasonSleeperFailure, "", "permanent", []error{sleeperCause}, 1},
 		{"elapsed", func(clock *manualClock) retry.Config {
 			config := baseConfig(clock, retry.Config{MaxElapsed: time.Second})
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationRetryable, nil })
 			return config
-		}, "retry elapsed budget exhausted: retry operation failed", retry.ReasonElapsedBudget, retry.BudgetElapsed, "budget", []error{cause}, 1},
+		}, "retry elapsed budget exhausted", retry.ReasonElapsedBudget, retry.BudgetElapsed, "budget", []error{cause}, 1},
 		{"sleep", func(clock *manualClock) retry.Config {
 			config := baseConfig(clock, retry.Config{MaxSleep: time.Second})
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationRetryable, nil })
 			return config
-		}, "retry sleep budget exhausted: retry operation failed", retry.ReasonSleepBudget, retry.BudgetSleep, "budget", []error{cause}, 1},
+		}, "retry sleep budget exhausted", retry.ReasonSleepBudget, retry.BudgetSleep, "budget", []error{cause}, 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -223,7 +223,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 		return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, cause
 	})
 	var budget *retry.BudgetError
-	if !errors.As(err, &budget) || budget.Kind != retry.BudgetAttempt || err.Error() != "retry attempt budget exhausted: retry attempt timed out" || !errors.Is(err, cause) || !errors.Is(err, context.DeadlineExceeded) || result.Retry.Reason != retry.ReasonAttemptBudget {
+	if !errors.As(err, &budget) || budget.Kind != retry.BudgetAttempt || err.Error() != "retry attempt budget exhausted" || !errors.Is(err, cause) || !errors.Is(err, context.DeadlineExceeded) || result.Retry.Reason != retry.ReasonAttemptBudget {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	if len(result.Retry.History) != 0 || !equalRetryResult(budget.Result(), result.Retry) {
@@ -241,7 +241,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 	result, err = retry.DoStrict(context.Background(), elapsedPolicy, func(context.Context) (retry.AttemptResult[string], error) {
 		return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, cause
 	})
-	if !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted: retry attempt timed out" || result.Retry.Reason != retry.ReasonElapsedBudget {
+	if !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted" || result.Retry.Reason != retry.ReasonElapsedBudget {
 		t.Fatalf("elapsed attempt result=%+v err=%v", result, err)
 	}
 	if !equalRetryResult(budget.Result(), result.Retry) {
@@ -261,7 +261,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 		t.Fatal("operation dispatched without work scope")
 		return retry.AttemptResult[string]{}, nil
 	})
-	if !errors.As(err, &budget) || budget.Kind != retry.BudgetWork || err.Error() != "retry work budget exhausted: retry work admission failed" || !errors.Is(err, resilience.ErrBudgetScopeRequired) || result.Outcome != retry.OutcomeNotDispatched || result.Retry.Reason != retry.ReasonWorkBudget {
+	if !errors.As(err, &budget) || budget.Kind != retry.BudgetWork || err.Error() != "retry work budget exhausted" || !errors.Is(err, resilience.ErrBudgetScopeRequired) || result.Outcome != retry.OutcomeNotDispatched || result.Retry.Reason != retry.ReasonWorkBudget {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	if len(result.Retry.History) != 0 || !equalRetryResult(budget.Result(), result.Retry) {
@@ -294,10 +294,10 @@ func TestDoStrictUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 			})
 			var budget *retry.BudgetError
 			wantReason := retry.ReasonElapsedBudget
-			wantText := "retry elapsed budget exhausted: retry operation failed"
+			wantText := "retry elapsed budget exhausted"
 			if budgetKind == retry.BudgetSleep {
 				wantReason = retry.ReasonSleepBudget
-				wantText = "retry sleep budget exhausted: retry operation failed"
+				wantText = "retry sleep budget exhausted"
 			}
 			if hinted.calls != 1 || !errors.As(err, &budget) || budget.Kind != budgetKind || !errors.Is(err, hinted) || err.Error() != wantText || len(err.Error()) > retry.MaxStrictTerminalErrorBytes || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != wantReason || result.Retry.FinalDelay != 3*time.Second || len(result.Retry.History) != int(historyLimit) || !equalRetryResult(budget.Result(), result.Retry) {
 				t.Fatalf("kind=%s history=%d calls=%d result=%+v err=%v", budgetKind, historyLimit, hinted.calls, result, err)
@@ -338,7 +338,7 @@ func TestDoStrictClassifierPanicIsSanitized(t *testing.T) {
 	}
 }
 
-func TestLegacyClassifierPanicRetainsFormattedPanicAndOperationCause(t *testing.T) {
+func TestDoClassifierPanicKeepsOperationCauseWithoutPanicText(t *testing.T) {
 	t.Parallel()
 
 	clock := newManualClock(time.Unix(100, 0))
@@ -352,7 +352,7 @@ func TestLegacyClassifierPanicRetainsFormattedPanicAndOperationCause(t *testing.
 		return "", operationErr
 	})
 	var permanent *retry.PermanentError
-	if !errors.As(err, &permanent) || !errors.Is(err, operationErr) || !strings.Contains(err.Error(), "classifier panic: legacy classifier panic") || result.Attempts != 1 || result.Reason != retry.ReasonClassifierFailure {
+	if !errors.As(err, &permanent) || !errors.Is(err, operationErr) || err.Error() != "permanent error" || result.Attempts != 1 || result.Reason != retry.ReasonClassifierFailure {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }

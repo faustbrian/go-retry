@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
-	"github.com/faustbrian/go-retry/retryhttp"
+	retry "github.com/faustbrian/go-retry/v2"
+	"github.com/faustbrian/go-retry/v2/retryhttp"
 )
 
 func TestParseRetryAfter(t *testing.T) {
@@ -53,15 +53,15 @@ func TestParseRetryAfterSaturatesOversizedSeconds(t *testing.T) {
 func TestClassifierUsesConservativeHTTPStatusSet(t *testing.T) {
 	t.Parallel()
 
-	classifier := retryhttp.NewClassifier(retryhttp.Options{})
+	classifier := mustFlatClassifier(t, retryhttp.Options{})
 	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
-		classification, err := classifier.Classify(context.Background(), retryhttp.StatusError(status, nil, nil))
+		classification, err := classifier.Classify(context.Background(), mustFlatError(t, status, nil, nil))
 		if err != nil || classification != retry.ClassificationRetryable {
 			t.Errorf("status %d = (%v, %v), want retryable", status, classification, err)
 		}
 	}
 	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusNotImplemented} {
-		classification, err := classifier.Classify(context.Background(), retryhttp.StatusError(status, nil, nil))
+		classification, err := classifier.Classify(context.Background(), mustFlatError(t, status, nil, nil))
 		if err != nil || classification != retry.ClassificationPermanent {
 			t.Errorf("status %d = (%v, %v), want permanent", status, classification, err)
 		}
@@ -72,8 +72,8 @@ func TestClassifierSupportsExplicitTransportPredicate(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("connection reset")
-	classifier := retryhttp.NewClassifier(retryhttp.Options{
-		RetryStatuses: []int{999, 42},
+	classifier := mustFlatClassifier(t, retryhttp.Options{
+		RetryStatuses: []int{999},
 		Transient:     func(err error) bool { return errors.Is(err, want) },
 	})
 	classification, err := classifier.Classify(context.Background(), want)
@@ -89,12 +89,12 @@ func TestClassifierSupportsExplicitTransportPredicate(t *testing.T) {
 func TestClassifierCopiesOnlyValidStatusBoundaries(t *testing.T) {
 	t.Parallel()
 
-	classifier := retryhttp.NewClassifier(retryhttp.Options{RetryStatuses: []int{99, 100, 999, 1000}})
+	classifier := mustFlatClassifier(t, retryhttp.Options{RetryStatuses: []int{100, 999}})
 	for status, want := range map[int]retry.Classification{
 		99: retry.ClassificationPermanent, 100: retry.ClassificationRetryable,
 		999: retry.ClassificationRetryable, 1000: retry.ClassificationPermanent,
 	} {
-		got, err := classifier.Classify(context.Background(), retryhttp.StatusError(status, nil, nil))
+		got, err := classifier.Classify(context.Background(), &retryhttp.Error{StatusCode: status})
 		if err != nil || got != want {
 			t.Fatalf("status %d = (%v, %v), want %v", status, got, err, want)
 		}
@@ -104,13 +104,13 @@ func TestClassifierCopiesOnlyValidStatusBoundaries(t *testing.T) {
 func TestStatusErrorPreservesCauseAndOnlyBoundedMetadata(t *testing.T) {
 	t.Parallel()
 
-	withoutCause := retryhttp.StatusError(http.StatusServiceUnavailable, nil, nil)
+	withoutCause := mustFlatError(t, http.StatusServiceUnavailable, nil, nil)
 	if withoutCause.Error() != "HTTP status 503" {
 		t.Fatalf("error = %q", withoutCause.Error())
 	}
 	cause := errors.New("transport")
-	withCause := retryhttp.StatusError(http.StatusBadGateway, nil, cause)
-	if !errors.Is(withCause, cause) || !strings.Contains(withCause.Error(), "transport") {
+	withCause := mustFlatError(t, http.StatusBadGateway, nil, cause)
+	if !errors.Is(withCause, cause) || strings.Contains(withCause.Error(), "transport") {
 		t.Fatalf("error = %v", withCause)
 	}
 }
@@ -123,7 +123,7 @@ func TestRetryAfterOverridesBackoffButStillHonorsMaximumDelay(t *testing.T) {
 	sleeper := &recordingSleeper{}
 	policy, err := retry.NewPolicy(retry.Config{
 		Backoff: retry.Constant(time.Second), MaxAttempts: 2, MaxDelay: 3 * time.Second,
-		Clock: clock, Sleeper: sleeper, Classifier: retryhttp.NewClassifier(retryhttp.Options{}),
+		Clock: clock, Sleeper: sleeper, Classifier: mustFlatClassifier(t, retryhttp.Options{}),
 	})
 	if err != nil {
 		t.Fatalf("NewPolicy: %v", err)
@@ -134,7 +134,7 @@ func TestRetryAfterOverridesBackoffButStillHonorsMaximumDelay(t *testing.T) {
 	_, _, err = retry.Do(context.Background(), policy, func(context.Context) (struct{}, error) {
 		calls++
 		if calls == 1 {
-			return struct{}{}, retryhttp.StatusError(http.StatusTooManyRequests, header, errors.New("busy"))
+			return struct{}{}, mustFlatError(t, http.StatusTooManyRequests, header, errors.New("busy"))
 		}
 		return struct{}{}, nil
 	})
@@ -146,39 +146,29 @@ func TestRetryAfterOverridesBackoffButStillHonorsMaximumDelay(t *testing.T) {
 	}
 }
 
-func TestLegacyHTTPPermissiveCompatibilitySurface(t *testing.T) {
-	t.Parallel()
-
-	classifier := retryhttp.NewClassifier(retryhttp.Options{RetryStatuses: []int{99, 500, 500, 1000}})
-	classification, err := classifier.Classify(context.Background(), retryhttp.StatusError(500, nil, nil))
-	if err != nil || classification != retry.ClassificationRetryable {
-		t.Fatalf("duplicate accepted status = (%v,%v)", classification, err)
-	}
-	for _, status := range []int{99, 1000} {
-		classification, err = classifier.Classify(context.Background(), retryhttp.StatusError(status, nil, nil))
-		if err != nil || classification != retry.ClassificationPermanent {
-			t.Fatalf("filtered status %d = (%v,%v)", status, classification, err)
-		}
-	}
-
-	oversized := http.Header{"Retry-After": {strings.Repeat("9", 129)}}
-	legacyError := retryhttp.StatusError(99, oversized, errors.New("legacy cause disclosure"))
-	if !strings.Contains(legacyError.Error(), "legacy cause disclosure") {
-		t.Fatalf("legacy error = %q", legacyError.Error())
-	}
-	var delayHint retry.DelayHint
-	if !errors.As(legacyError, &delayHint) {
-		t.Fatal("legacy error lost delay hint")
-	}
-	if delay, ok := delayHint.RetryDelay(time.Time{}); !ok || delay != time.Duration(1<<63-1) {
-		t.Fatalf("legacy oversized Retry-After = (%s,%v)", delay, ok)
-	}
-
-	zeroClassifier := &retryhttp.Classifier{}
-	classification, err = zeroClassifier.Classify(context.Background(), errors.New("unknown"))
+func TestFlatHTTPZeroClassifierRemainsPermanent(t *testing.T) {
+	classification, err := (&retryhttp.Classifier{}).Classify(context.Background(), errors.New("unknown"))
 	if err != nil || classification != retry.ClassificationPermanent {
-		t.Fatalf("legacy zero classifier = (%v,%v)", classification, err)
+		t.Fatalf("zero classifier = (%v,%v)", classification, err)
 	}
+}
+
+func mustFlatClassifier(t *testing.T, options retryhttp.Options) *retryhttp.Classifier {
+	t.Helper()
+	value, err := retryhttp.NewClassifier(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+
+func mustFlatError(t *testing.T, status int, header http.Header, cause error) *retryhttp.Error {
+	t.Helper()
+	value, err := retryhttp.StatusError(status, header, cause)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 type fixedClock struct{ now time.Time }

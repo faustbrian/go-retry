@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
-	retrypostgres "github.com/faustbrian/go-retry/adapters/postgres"
+	retry "github.com/faustbrian/go-retry/v2"
+	retrypostgres "github.com/faustbrian/go-retry/v2/adapters/postgres"
 
 	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/retrypgx" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	legacy "github.com/faustbrian/go-retry/v2/retrypgx" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -136,7 +136,7 @@ func TestClassifierRejectsNilAndTypedNilContext(t *testing.T) {
 func TestClassifierOwnsSuccessorIdentityAndZeroValueWorks(t *testing.T) {
 	t.Parallel()
 
-	if got := reflect.TypeOf(retrypostgres.Classifier{}).PkgPath(); got != "github.com/faustbrian/go-retry/adapters/postgres" {
+	if got := reflect.TypeOf(retrypostgres.Classifier{}).PkgPath(); got != "github.com/faustbrian/go-retry/v2/adapters/postgres" {
 		t.Fatalf("PkgPath = %q", got)
 	}
 	classification, err := (retrypostgres.Classifier{}).Classify(context.Background(), &pgconn.PgError{Code: "40001"})

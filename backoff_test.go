@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 )
 
 func TestDeterministicBackoffVectors(t *testing.T) {

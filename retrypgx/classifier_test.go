@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"testing"
 
-	retry "github.com/faustbrian/go-retry"
-	"github.com/faustbrian/go-retry/retrypgx"
+	retry "github.com/faustbrian/go-retry/v2"
+	"github.com/faustbrian/go-retry/v2/retrypgx"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

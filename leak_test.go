@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 	"go.uber.org/goleak"
 )
 

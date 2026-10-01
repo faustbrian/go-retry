@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 )
 
 func TestBackoffHostileInputsRemainBounded(t *testing.T) {

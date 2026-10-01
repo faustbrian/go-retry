@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/faustbrian/go-resilience"
-	retry "github.com/faustbrian/go-retry"
+	retry "github.com/faustbrian/go-retry/v2"
 )
 
 func TestDoStrictNormalizesContextMatchingSleeperErrors(t *testing.T) {
@@ -114,7 +114,7 @@ func TestDoStrictChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, errors.New("unused")
 		})
 		var budget *retry.BudgetError
-		if calls != 0 || !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted: retry deadline reached" || result.Outcome != retry.OutcomeNotDispatched || result.Retry.Reason != retry.ReasonElapsedBudget || !equalRetryResult(budget.Result(), result.Retry) {
+		if calls != 0 || !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted" || result.Outcome != retry.OutcomeNotDispatched || result.Retry.Reason != retry.ReasonElapsedBudget || !equalRetryResult(budget.Result(), result.Retry) {
 			t.Fatalf("calls=%d result=%+v err=%v", calls, result, err)
 		}
 		assertDefensiveStrictResult(t, budget.Result, result.Retry)
@@ -134,7 +134,7 @@ func TestDoStrictChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
 		})
 		var budget *retry.BudgetError
-		if calls != 1 || !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted: retry deadline reached" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonElapsedBudget || !equalRetryResult(budget.Result(), result.Retry) {
+		if calls != 1 || !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonElapsedBudget || !equalRetryResult(budget.Result(), result.Retry) {
 			t.Fatalf("calls=%d result=%+v err=%v", calls, result, err)
 		}
 		assertDefensiveStrictResult(t, budget.Result, result.Retry)
@@ -177,7 +177,7 @@ func TestDoStrictCompletesPermitsAndReportsLaterWorkBudgetFailure(t *testing.T) 
 		})
 		var budgetErr *retry.BudgetError
 		var rejection *resilience.BudgetRejectionError
-		if calls != 2 || !errors.As(err, &budgetErr) || budgetErr.Kind != retry.BudgetWork || err.Error() != "retry work budget exhausted: retry work admission failed" || len(err.Error()) > retry.MaxStrictTerminalErrorBytes || !errors.Is(err, resilience.ErrBudgetRejected) || !errors.As(err, &rejection) || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonWorkBudget || !equalRetryResult(budgetErr.Result(), result.Retry) {
+		if calls != 2 || !errors.As(err, &budgetErr) || budgetErr.Kind != retry.BudgetWork || err.Error() != "retry work budget exhausted" || len(err.Error()) > retry.MaxStrictTerminalErrorBytes || !errors.Is(err, resilience.ErrBudgetRejected) || !errors.As(err, &rejection) || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonWorkBudget || !equalRetryResult(budgetErr.Result(), result.Retry) {
 			t.Fatalf("history=%d calls=%d result=%+v err=%v", historyLimit, calls, result, err)
 		}
 		assertStrictCarrier(t, err, []error{rejection})

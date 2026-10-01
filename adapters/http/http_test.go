@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry"
-	retryhttp "github.com/faustbrian/go-retry/adapters/http"
+	retry "github.com/faustbrian/go-retry/v2"
+	retryhttp "github.com/faustbrian/go-retry/v2/adapters/http"
 
 	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/retryhttp" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	legacy "github.com/faustbrian/go-retry/v2/retryhttp" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 )
 
 func TestNewValidatesRetryStatusesDeterministically(t *testing.T) {
@@ -246,7 +246,7 @@ func TestParseRetryAfterMatchesLegacyAndSaturates(t *testing.T) {
 func TestSuccessorTypesOwnTheirReflectionIdentity(t *testing.T) {
 	t.Parallel()
 
-	const want = "github.com/faustbrian/go-retry/adapters/http"
+	const want = "github.com/faustbrian/go-retry/v2/adapters/http"
 	for _, value := range []any{retryhttp.Options{}, retryhttp.Classifier{}, retryhttp.Error{}} {
 		if got := reflect.TypeOf(value).PkgPath(); got != want {
 			t.Fatalf("%T PkgPath = %q", value, got)
