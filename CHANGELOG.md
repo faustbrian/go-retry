@@ -6,6 +6,9 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Changed
 
+- Select OpenTelemetry v1.46.0 API and metric SDK modules together, retaining
+  exact retry measurements and caller-filtered aggregation across legacy,
+  strict legacy, and successor observers with caller-owned provider lifetime.
 - Select OpenTelemetry v1.45.0 API and metric SDK modules together, retaining
   retry metric names, bounded attributes, and the distinct legacy and target
   instrumentation scopes. The selected SDK also patches verbose internal
