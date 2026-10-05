@@ -4,6 +4,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-05
+
 ### Changed
 
 - Select pgx v5.11.0 while retaining PostgreSQL SQLSTATE and connection
@@ -17,10 +19,6 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
   instrumentation scopes. The selected SDK also patches verbose internal
   trace-exporter diagnostics; retry's metric adapters do not create exporters,
   and provider lifetime and diagnostic configuration remain caller-owned.
-
-## [2.0.0] - 2026-10-01
-
-### Changed
 
 - Move the module and its ten public packages to the required `/v2` import
   suffix and require Go 1.27.0. Source remains on main.

@@ -15,10 +15,10 @@ backoff. Every policy requires a finite attempt limit, an error classifier,
 timing dependencies, a backoff strategy, and an operation. The package never
 assumes the operation is idempotent or safe to repeat.
 
-Current main prepares v2.0.0 at the `/v2` module path for Go 1.27.0. It is not
-published until its public tag and release exist; published v1.1.0 remains
-available with its historical Go 1.26.6 and diagnostic contracts. See the
-[major-version migration](docs/migration.md) before adopting current source.
+v2.0.0 uses the `/v2` module path and requires Go 1.27.0. Adopt it only after
+its public tag and module are available; published v1.1.0 remains available
+with its historical Go 1.26.6 and diagnostic contracts. See the
+[major-version migration](docs/migration.md) before adopting v2.
 
 ```go
 policy, err := retry.NewPolicyStrict(retry.Config{

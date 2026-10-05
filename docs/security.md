@@ -1,7 +1,7 @@
 # Security model: v2 API family
 
 This model applies to the root module `github.com/faustbrian/go-retry/v2` and its
-nine adapter packages. The planned v2.0.0 release requires Go 1.27.0, repairs
+nine adapter packages. The v2.0.0 release requires Go 1.27.0, repairs
 `Do` resource cleanup, and makes default diagnostics and flat HTTP admission
 safe. It is not published merely because this model or its source exists.
 Public tags and releases establish publication status. Published v1.1.0 uses
@@ -68,6 +68,6 @@ admission, elapsed-budget pre-dispatch exit, and panic cleanup, with exact
 permit/context ownership and existing classification preserved. Strict outcome
 and redaction controls remain distinct from legacy compatibility controls.
 Source review, affected tests/static/API checks and required exact-source CI
-are necessary evidence for this planned major. A public release additionally requires
-its existing release rehearsal, trusted signatures/assets and a clean public
-consumer. This model alone certifies none of those delivery states.
+are necessary evidence for this major. A public release additionally requires
+its existing release rehearsal, trusted release signatures and artifacts,
+and a clean public consumer. This model alone certifies none of those delivery states.

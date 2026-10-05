@@ -1,6 +1,6 @@
 # Compatibility
 
-The planned v2.0.0 module uses `github.com/faustbrian/go-retry/v2` and requires
+The v2.0.0 module uses `github.com/faustbrian/go-retry/v2` and requires
 Go 1.27.0. Published v1.1.0 uses Go 1.26.6 and remains an immutable historical
 release. v2 publication is established only by public tags and releases.
 Root markers and terminal errors no longer format causes; explicit `Unwrap`

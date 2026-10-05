@@ -22,7 +22,7 @@ or target-oriented observability identity without changing the legacy paths.
 See [`docs/migration.md`](docs/migration.md) for exact behavior and type-identity
 differences.
 
-The planned v2 retains all named compatibility packages and their distinct
+The v2 module retains all named compatibility packages and their distinct
 type identities. Flat HTTP constructors gain explicit admission-error returns
 and share canonical input bounds; default errors no longer format causes.
 These necessary security changes are documented major-version migration, not
