@@ -6,6 +6,9 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ### Changed
 
+- Select pgx v5.11.0 while retaining PostgreSQL SQLSTATE and connection
+  failure classification, including the distinct caller-cancellation
+  precedence of legacy and successor classifiers.
 - Select OpenTelemetry v1.46.0 API and metric SDK modules together, retaining
   exact retry measurements and caller-filtered aggregation across legacy,
   strict legacy, and successor observers with caller-owned provider lifetime.
