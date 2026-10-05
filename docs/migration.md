@@ -1,11 +1,11 @@
 # Migration
 
-## v1 to the planned v2 module
+## v1 to the v2 module
 
 v2 requires Go 1.27.0 and imports `github.com/faustbrian/go-retry/v2`.
 Update all ten package imports together; no version-specific source directory
 or branch exists. Published v1.1.0 remains immutable and uses Go 1.26.6.
-The planned v2.0.0 source is unpublished until its public tag and release exist.
+Adopt v2.0.0 only after its public tag and module are available.
 
 Root `RetryableError`, `PermanentError`, `ExhaustedError`, `CanceledError`, and
 `BudgetError` now use safe category text without invoking application causes.

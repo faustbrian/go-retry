@@ -18,8 +18,14 @@ Specification-backed modules MUST NOT diverge from their declared standards.
 Ambiguities require documented decisions and stable tests. Deprecated APIs
 follow [`DEPRECATION.md`](DEPRECATION.md).
 
-The additive strict root APIs and target-oriented adapter packages preserve all
-released imports. Legacy cancellation, terminal formatting, permissive HTTP
-configuration, PostgreSQL precedence, and OTel scope behavior remain available
-during the compatibility interval. Successor named types deliberately have
-different reflection identities and must not be treated as aliases.
+Published v1 retains its historical imports and legacy cancellation, terminal
+formatting, permissive HTTP configuration, PostgreSQL precedence, and OTel
+scope behavior during the documented compatibility interval.
+
+The v2 module uses `/v2` imports and retains the named compatibility packages,
+not all v1 behavior. Flat HTTP constructors return admission errors and enforce
+canonical input bounds; default terminal text does not format causes. Legacy
+dispatch, PostgreSQL precedence, and OTel scope remain intentionally distinct
+from successor variants. Follow [migration guidance](docs/migration.md) when
+adopting v2. Successor named types have different reflection identities and
+must not be treated as aliases.
