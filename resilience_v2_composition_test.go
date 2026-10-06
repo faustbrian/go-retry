@@ -11,7 +11,7 @@ import (
 	"github.com/faustbrian/go-retry/v2"
 )
 
-func runVersionedRetry(t *testing.T, strict bool, ctx context.Context, clock *manualClock, operation func(context.Context) (string, error)) (string, retry.Result, error) {
+func runVersionedRetry(ctx context.Context, t *testing.T, strict bool, clock *manualClock, operation func(context.Context) (string, error)) (string, retry.Result, error) {
 	t.Helper()
 	config := retry.Config{Backoff: retry.Constant(0), MaxAttempts: 3, Clock: clock,
 		Sleeper: advancingSleeper{clock: clock}, Classifier: retry.RetryableClassifier(), UseResilienceBudget: true}
@@ -33,7 +33,7 @@ func runVersionedRetry(t *testing.T, strict bool, ctx context.Context, clock *ma
 	return retry.Do(ctx, policy, operation)
 }
 
-func version2Scope(t *testing.T, ctx context.Context, clock *manualClock) (resiliencev2.WorkBudgetScope, context.Context) {
+func version2Scope(ctx context.Context, t *testing.T, clock *manualClock) (resiliencev2.WorkBudgetScope, context.Context) {
 	t.Helper()
 	budget, err := resiliencev2.NewBudget(resiliencev2.BudgetConfig{MaxResources: 1, MaxScopes: 1,
 		MaxAdditionalPerExecution: 1, MaxConcurrentAdditional: 1, MaxAdditionalPerWindow: 1,
@@ -65,12 +65,12 @@ func TestRetryVersion2BudgetComposition(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			clock := newManualClock(time.Unix(700, 0))
-			scope, ctx := version2Scope(t, context.Background(), clock)
-			calls := 0
-			value, result, err := runVersionedRetry(t, strict, ctx, clock, func(ctx context.Context) (string, error) {
+			scope, ctx := version2Scope(context.Background(), t, clock)
+			var calls uint64
+			value, result, err := runVersionedRetry(ctx, t, strict, clock, func(ctx context.Context) (string, error) {
 				calls++
 				attempt, ok := resiliencev2.AttemptFromContext(ctx)
-				if !ok || attempt.Ordinal != uint64(calls) {
+				if !ok || attempt.Ordinal != calls {
 					t.Fatal("missing version2 lineage")
 				}
 				if calls == 1 && (attempt.Origin != resiliencev2.OriginOriginal || attempt.ParentOrdinal != 0) {
@@ -101,7 +101,7 @@ func TestRetryVersion2BorrowedAttempt(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			clock := newManualClock(time.Unix(710, 0))
-			scope, ctx := version2Scope(t, context.Background(), clock)
+			scope, ctx := version2Scope(context.Background(), t, clock)
 			attached, original, permit, err := resiliencev2.AdmitAttempt(ctx, resiliencev2.OriginOriginal, 0, clock.Now())
 			if err != nil {
 				t.Fatal(err)
@@ -111,7 +111,7 @@ func TestRetryVersion2BorrowedAttempt(t *testing.T) {
 					t.Errorf("complete borrowed permit: %v", err)
 				}
 			}()
-			value, result, err := runVersionedRetry(t, strict, attached, clock, func(ctx context.Context) (string, error) {
+			value, result, err := runVersionedRetry(attached, t, strict, clock, func(ctx context.Context) (string, error) {
 				current, ok := resiliencev2.AttemptFromContext(ctx)
 				if !ok || current != original {
 					t.Fatal("borrowed attempt changed")
@@ -154,7 +154,7 @@ func TestRetryRejectsDualBudgetVersions(t *testing.T) {
 				ctx := context.Background()
 				var scope2 resiliencev2.WorkBudgetScope
 				if v2First {
-					scope2, ctx = version2Scope(t, ctx, clock)
+					scope2, ctx = version2Scope(ctx, t, clock)
 				}
 				scope1, ctx, err := budget.Start(ctx, metadata)
 				if err != nil {
@@ -166,11 +166,11 @@ func TestRetryRejectsDualBudgetVersions(t *testing.T) {
 					}
 				}()
 				if !v2First {
-					scope2, ctx = version2Scope(t, ctx, clock)
+					scope2, ctx = version2Scope(ctx, t, clock)
 				}
 				before1, before2 := scope1.Snapshot(), scope2.Snapshot()
 				calls := 0
-				value, result, err := runVersionedRetry(t, strict, ctx, clock, func(context.Context) (string, error) { calls++; return "wrong", nil })
+				value, result, err := runVersionedRetry(ctx, t, strict, clock, func(context.Context) (string, error) { calls++; return "wrong", nil })
 				if !errors.Is(err, retry.ErrInvalidPolicy) || value != "" || calls != 0 || result.Attempts != 0 || result.Reason != retry.ReasonWorkBudget {
 					t.Fatalf("dual dispatch: calls=%d result=%+v error=%v", calls, result, err)
 				}
@@ -190,12 +190,12 @@ func TestRetryVersion2CanceledBeforeDispatch(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			clock := newManualClock(time.Unix(730, 0))
-			scope, attached := version2Scope(t, context.Background(), clock)
+			scope, attached := version2Scope(context.Background(), t, clock)
 			ctx, cancel := context.WithCancel(attached)
 			cancel()
 			before := scope.Snapshot()
 			calls := 0
-			_, result, err := runVersionedRetry(t, strict, ctx, clock, func(context.Context) (string, error) { calls++; return "wrong", nil })
+			_, result, err := runVersionedRetry(ctx, t, strict, clock, func(context.Context) (string, error) { calls++; return "wrong", nil })
 			if !errors.Is(err, context.Canceled) || calls != 0 || result.Attempts != 0 {
 				t.Fatalf("canceled calls=%d result=%+v error=%v", calls, result, err)
 			}
@@ -215,7 +215,7 @@ func TestRetryVersionedBudgetMissingScope(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			clock := newManualClock(time.Unix(740, 0))
 			calls := 0
-			value, result, err := runVersionedRetry(t, strict, context.Background(), clock, func(context.Context) (string, error) { calls++; return "wrong", nil })
+			value, result, err := runVersionedRetry(context.Background(), t, strict, clock, func(context.Context) (string, error) { calls++; return "wrong", nil })
 			if !errors.Is(err, resiliencev1.ErrBudgetScopeRequired) || value != "" || calls != 0 || result.Attempts != 0 || result.Reason != retry.ReasonWorkBudget {
 				t.Fatalf("missing scope: calls=%d result=%+v error=%v", calls, result, err)
 			}
