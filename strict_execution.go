@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/faustbrian/go-resilience"
 )
 
 // ReasonOutcomeUnknown identifies a dispatched operation whose result cannot
@@ -47,7 +45,7 @@ func DoStrict[T any](ctx context.Context, policy *Policy, operation StrictOperat
 
 	totalSleep := time.Duration(0)
 	previousDelay := time.Duration(0)
-	var undispatchedPermit resilience.Permit
+	var undispatchedPermit budgetPermit
 	defer func() {
 		if undispatchedPermit != nil {
 			_ = undispatchedPermit.Complete()
@@ -213,7 +211,7 @@ func DoStrict[T any](ctx context.Context, policy *Policy, operation StrictOperat
 
 }
 
-func invokeStrictOperation[T any](ctx context.Context, operation StrictOperation[T], permit resilience.Permit) (result AttemptResult[T], err error) {
+func invokeStrictOperation[T any](ctx context.Context, operation StrictOperation[T], permit budgetPermit) (result AttemptResult[T], err error) {
 	if permit != nil {
 		defer func() { _ = permit.Complete() }()
 	}

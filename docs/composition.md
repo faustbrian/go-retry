@@ -26,6 +26,13 @@ the shared scope for a new additional-work permit. This changes the upper bound
 from an accidental `(retries + 1) * (hedges + 1)` to the original attempt plus
 the configured shared additional-work allowance.
 
+The selected scope version must also be supported by every nested executor.
+Retry supports v1 and v2 explicitly; this does not imply v2 support in Hedge
+or another executor. Retain a v1-scoped stack until every participant supports
+v2, then move the entire logical execution to one v2 scope. Attaching both
+versions is not a migration bridge: Retry refuses that configuration before
+physical work when shared-budget mode is enabled.
+
 ## Collaborator ownership
 
 `NewPolicyStrict` copies the `Config` value and its scalar bounds. Mutating the
