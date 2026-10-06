@@ -4,6 +4,15 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Changed
+
+- Select OpenTelemetry v1.47.0 API and metric SDK modules together,
+  retaining exact retry measurements, filtered aggregation and distinct
+  legacy and successor scopes with caller-owned provider lifetime.
+  Applications using OTEL_GO_X_METRIC_EXPORT_BATCH_SIZE must configure
+  sdkmetric.WithMaxExportBatchSize instead; retry does not own readers
+  or exporters.
+
 ### Added
 
 - Consume published Resilience/v2 work budgets alongside retained v1 budgets
