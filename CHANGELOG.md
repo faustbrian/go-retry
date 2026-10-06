@@ -4,6 +4,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-06
+
 ### Changed
 
 - Select OpenTelemetry v1.47.0 API and metric SDK modules together,
@@ -12,6 +14,11 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
   Applications using OTEL_GO_X_METRIC_EXPORT_BATCH_SIZE must configure
   sdkmetric.WithMaxExportBatchSize instead; retry does not own readers
   or exporters.
+
+- Select legacy Resilience v1.1.0 alongside the retained v2 work-budget
+  module, preserving attempt lineage, admission and permit ownership.
+
+## [2.1.0] - 2026-10-06
 
 ### Added
 

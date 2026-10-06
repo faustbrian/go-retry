@@ -137,7 +137,7 @@
       "family_label": "Resilience",
       "family_description": "Explicit admission, isolation, retry, amplification, and failure policies.",
       "family_order": 5,
-      "version": "2.1.0",
+      "version": "2.1.1",
       "tag_prefix": "v",
       "owned_dependencies": [
         "github.com/faustbrian/go-resilience",
