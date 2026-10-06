@@ -28,7 +28,7 @@ attached to the call context. The first physical attempt is admitted as
 original work unless an outer executor already placed an attempt in context.
 Every later retry is admitted as additional work with explicit parent lineage.
 
-Both `github.com/faustbrian/go-resilience` v1.0.0 and
+Both `github.com/faustbrian/go-resilience` v1.1.0 and
 `github.com/faustbrian/go-resilience/v2` v2.0.0 are supported explicitly. With
 shared-budget mode enabled, `Do` and `DoStrict` select the sole attached version
 once; its own scope, ordinal state, attempt context and permits remain the
