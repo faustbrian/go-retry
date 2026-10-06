@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/faustbrian/go-resilience"
 )
 
 // Reason identifies why execution stopped.
@@ -96,7 +94,7 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 	result := Result{}
 	totalSleep := time.Duration(0)
 	previousDelay := time.Duration(0)
-	var undispatchedPermit resilience.Permit
+	var undispatchedPermit budgetPermit
 	defer func() {
 		if undispatchedPermit != nil {
 			_ = undispatchedPermit.Complete()
@@ -214,7 +212,7 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 	return zero, result, fmt.Errorf("%w: retry loop ended without a terminal result", ErrInvalidPolicy)
 }
 
-func invokeOperation[T any](ctx context.Context, operation func(context.Context) (T, error), permit resilience.Permit) (value T, err error) {
+func invokeOperation[T any](ctx context.Context, operation func(context.Context) (T, error), permit budgetPermit) (value T, err error) {
 	if permit != nil {
 		defer func() { _ = permit.Complete() }()
 	}

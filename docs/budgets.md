@@ -28,6 +28,18 @@ attached to the call context. The first physical attempt is admitted as
 original work unless an outer executor already placed an attempt in context.
 Every later retry is admitted as additional work with explicit parent lineage.
 
+Both `github.com/faustbrian/go-resilience` v1.0.0 and
+`github.com/faustbrian/go-resilience/v2` v2.0.0 are supported explicitly. With
+shared-budget mode enabled, `Do` and `DoStrict` select the sole attached version
+once; its own scope, ordinal state, attempt context and permits remain the
+authority throughout the call. They do not convert attempts between versions.
+Contexts carrying both scope versions are refused before operation dispatch
+or budget admission with `BudgetWork` and the `ErrInvalidPolicy` cause.
+A context with neither scope retains the v1 `ErrBudgetScopeRequired` cause.
+Callers own the logical scope and must close it after all nested work finishes.
+Retry completes permits it acquires, but an outer executor retains completion
+ownership of an already attached physical attempt.
+
 Missing scope, closed scope, invalid lineage, or capacity denial stops before
 the next downstream invocation with `ReasonWorkBudget` and a `BudgetError`
 whose kind is `BudgetWork`. The error unwraps to the original resilience error,

@@ -4,6 +4,13 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Added
+
+- Consume published Resilience/v2 work budgets alongside retained v1 budgets
+  in both legacy and strict execution. A shared-budget call selects one scope
+  version, preserves its attempt lineage and permit ownership, and refuses
+  contexts carrying both versions before dispatch.
+
 ## [2.0.0] - 2026-10-05
 
 ### Changed

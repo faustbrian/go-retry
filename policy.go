@@ -3,10 +3,12 @@ package retry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/faustbrian/go-resilience"
+	resiliencev2 "github.com/faustbrian/go-resilience/v2"
 )
 
 // ErrInvalidPolicy identifies contradictory, implicit, or unbounded policies.
@@ -82,21 +84,50 @@ type Policy struct {
 	config Config
 }
 
-func (policy *Policy) initialWorkContext(ctx context.Context) (context.Context, resilience.Attempt, resilience.Permit, error) {
-	if !policy.config.UseResilienceBudget {
-		return ctx, resilience.Attempt{}, nil, nil
-	}
-	if attempt, ok := resilience.AttemptFromContext(ctx); ok {
-		return ctx, attempt, nil, nil
-	}
-	return resilience.AdmitAttempt(ctx, resilience.OriginOriginal, 0, policy.config.Clock.Now())
+// The selected version owns lineage and completion for the entire execution;
+// nominal attempts are never converted or attached to the other version.
+type workAttempt struct {
+	ordinal  uint64
+	version2 bool
 }
 
-func (policy *Policy) retryWorkContext(ctx context.Context, parent resilience.Attempt) (context.Context, resilience.Attempt, resilience.Permit, error) {
+type budgetPermit interface {
+	Complete() error
+}
+
+func (policy *Policy) initialWorkContext(ctx context.Context) (context.Context, workAttempt, budgetPermit, error) {
 	if !policy.config.UseResilienceBudget {
-		return ctx, resilience.Attempt{}, nil, nil
+		return ctx, workAttempt{}, nil, nil
 	}
-	return resilience.AdmitAttempt(ctx, resilience.OriginRetry, parent.Ordinal, policy.config.Clock.Now())
+	_, version1 := resilience.BudgetScopeFromContext(ctx)
+	_, version2 := resiliencev2.BudgetScopeFromContext(ctx)
+	if version1 && version2 {
+		return nil, workAttempt{}, nil, fmt.Errorf("%w: multiple resilience budget versions", ErrInvalidPolicy)
+	}
+	if version2 {
+		if attempt, ok := resiliencev2.AttemptFromContext(ctx); ok {
+			return ctx, workAttempt{ordinal: attempt.Ordinal, version2: true}, nil, nil
+		}
+		attached, attempt, permit, err := resiliencev2.AdmitAttempt(ctx, resiliencev2.OriginOriginal, 0, policy.config.Clock.Now())
+		return attached, workAttempt{ordinal: attempt.Ordinal, version2: true}, permit, err
+	}
+	if attempt, ok := resilience.AttemptFromContext(ctx); ok {
+		return ctx, workAttempt{ordinal: attempt.Ordinal}, nil, nil
+	}
+	attached, attempt, permit, err := resilience.AdmitAttempt(ctx, resilience.OriginOriginal, 0, policy.config.Clock.Now())
+	return attached, workAttempt{ordinal: attempt.Ordinal}, permit, err
+}
+
+func (policy *Policy) retryWorkContext(ctx context.Context, parent workAttempt) (context.Context, workAttempt, budgetPermit, error) {
+	if !policy.config.UseResilienceBudget {
+		return ctx, workAttempt{}, nil, nil
+	}
+	if parent.version2 {
+		attached, attempt, permit, err := resiliencev2.AdmitAttempt(ctx, resiliencev2.OriginRetry, parent.ordinal, policy.config.Clock.Now())
+		return attached, workAttempt{ordinal: attempt.Ordinal, version2: true}, permit, err
+	}
+	attached, attempt, permit, err := resilience.AdmitAttempt(ctx, resilience.OriginRetry, parent.ordinal, policy.config.Clock.Now())
+	return attached, workAttempt{ordinal: attempt.Ordinal}, permit, err
 }
 
 // NewPolicy validates and copies config.
