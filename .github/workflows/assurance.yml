@@ -1,0 +1,21 @@
+name: Selected assurance
+
+on:
+  schedule:
+    - cron: '17 8 8 * *'
+  workflow_dispatch:
+    inputs:
+      fuzz_target:
+        description: Exact declared package/target identity, for example ./adapters/http::^FuzzParseRetryAfterNeverReturnsNegativeDelay$
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  assurance:
+    uses: faustbrian/go-library-tools/.github/workflows/library-assurance.yml@d19f417e9f6f8d477530908dbd476f56e2fd08d1
+    with:
+      tooling_sha: d19f417e9f6f8d477530908dbd476f56e2fd08d1
+      fuzz_target: ${{ inputs.fuzz_target || '' }}

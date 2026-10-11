@@ -76,6 +76,38 @@ release boundary, not every commit. Report unavailable or failed checks honestly
 a fast local pass is not public-release or hosted-CI qualification.
 CI/configuration-only changes do not require a module release.
 
+## Selected Monthly Assurance
+
+[`assurance.yml`](.github/workflows/assurance.yml) runs on main at 08:17 UTC on
+the 8th day of each month. It selects one of the 5 declared root-module
+package/target pairs using the shared UTC-week selector, not full campaigns or
+a guaranteed complete monthly rotation. Duplicate names in different packages
+remain separate risks. Explicit main-only dispatch accepts a declared identity
+in `package::^FuzzName$` form, for example
+`./adapters/http::^FuzzParseRetryAfterNeverReturnsNegativeDelay$`.
+A bare name is accepted only when unique; inputs are validated as declared
+identities and are not forwarded as shell commands.
+
+The selected risks are nonnegative backoff, contradictory delay-bound rejection,
+Retry-After parsing and bounded response metadata. Existing assertions compare
+canonical/legacy parsing and retain accepted causes or typed refusal errors.
+This does not establish operation replay safety, concurrent execution, admission
+cleanup, timer cancellation or adapter composition; retain affected lifecycle,
+race, public API and direct-consumer checks.
+
+The immutable shared runner bounds active fuzzing to 30 seconds, two workers
+and two CPUs, with a five-minute combined native session, 2 GiB memory and
+1 MiB output limits inside a ten-minute job. It installs the declared public
+CLI without a source build, uses private disposable caches and keeps failures,
+timeouts and exhausted budgets visible. Ordinary deterministic tests still run
+seeds/corpus; ordinary CI and its Required contract are unchanged. Full/manual
+operations and their original budgets remain in `.golib.yaml`.
+
+Treat findings as owner-attributed diagnostics: promptly repair viable defects
+with focused regressions; retain reviewed narrow equivalent/invalid dispositions
+rather than weakening tests. Review cadence against useful findings and actual
+cost; do not interpret a selected pass as full or release qualification.
+
 ## Adding A Module
 
 Follow [repository structure policy](AGENTS.md#repository-structure). New modules
