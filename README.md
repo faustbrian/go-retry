@@ -3,7 +3,7 @@
 [![CI](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/badge/CodeQL-required-blue)](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25_required-blue)](CONTRIBUTING.md#verification)
-[![Mutation](https://img.shields.io/badge/mutation-100%25_required-blue)](CONTRIBUTING.md#verification)
+[![Mutation](https://img.shields.io/badge/mutation-local_or_scheduled-blue)](CONTRIBUTING.md#verification)
 [![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-retry/v2.svg)](https://pkg.go.dev/github.com/faustbrian/go-retry/v2)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-retry?sort=semver)](https://github.com/faustbrian/go-retry/releases)
@@ -62,6 +62,14 @@ retryable classifies a known failure; it does not make a side effect idempotent.
   adapters.
 - Deterministic vectors, statistical tests, fuzzing, race/leak checks,
   mutation checks, and comparative allocation benchmarks.
+
+## Development
+
+Start with `go test ./...` or a focused package/test selector. `make check` and
+`make ci` use bounded checks with the public verifier declared in `.golib.yaml`,
+including the named concurrency/lifecycle race assertions. See
+[contributor verification](CONTRIBUTING.md#verification) for focused fuzzing,
+optional local mutation and explicit full/release qualification.
 
 ## Documentation
 
