@@ -210,3 +210,12 @@ service or full test campaign was run. Example execution includes the existing
 root TestMain hook; it is not broad runtime qualification. Parent owns exact-
 source hosted CI and publication. There is no runtime repair or new replay,
 privacy-erasure, distribution or hard-deadline guarantee.
+
+## Objective Enforcement
+
+The checksum-pinned public Tools v2.4.0 verifier now supplies
+`make source-docs-check` as a prerequisite of the existing local and CI Make
+routes. Ordinary shared CI selects strict source-documentation checking and
+requires its result. Native prerequisites, operation budgets, security and
+release controls are retained. Hosted exact-head evidence is recorded by the
+coordination ledger; configuration alone does not establish green delivery.
