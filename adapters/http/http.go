@@ -29,11 +29,17 @@ var ErrInvalidResponse = errors.New("invalid HTTP retry response")
 // conservative default set. Transient may classify transport errors, but does
 // not assert that replay is safe.
 type Options struct {
+	// RetryStatuses is copied. Nil selects defaults; an explicit empty slice
+	// disables status retries. Entries must be unique integers from 100 through 999.
 	RetryStatuses []int
-	Transient     func(error) bool
+	// Transient is an optional borrowed transport predicate. Calls are synchronous,
+	// may overlap or reenter, and panic directly; synchronize captured state.
+	Transient func(error) bool
 }
 
-// Classifier classifies HTTP failures without making idempotency decisions.
+// Classifier owns an immutable status map but borrows Transient. Concurrent
+// use requires a concurrent-safe predicate. Construct with New; nil/zero
+// classifiers report ErrInvalidPolicy. There is no transport or body ownership.
 type Classifier struct {
 	statuses  map[int]struct{}
 	transient func(error) bool
@@ -64,7 +70,10 @@ func New(options Options) (*Classifier, error) {
 }
 
 // Classify implements retry.Classifier. Classification does not make replay
-// safe; the operation owner retains that decision.
+// safe; the operation owner retains that decision. ctx is not inspected.
+// Canonical Error chains take precedence over Transient, including permanent
+// status responses. Foreign error types can reach Transient. Direct predicate
+// panic/blocking propagates; retry execution adds classifier panic containment.
 func (classifier *Classifier) Classify(_ context.Context, err error) (retry.Classification, error) {
 	if classifier == nil || classifier.statuses == nil {
 		return 0, fmt.Errorf("%w: classifier is nil or uninitialized", retry.ErrInvalidPolicy)
@@ -90,7 +99,11 @@ type Error struct {
 }
 
 // NewError validates and snapshots only the HTTP metadata needed for retry
-// classification and delay selection.
+// classification and delay selection. Nil headers and causes are accepted;
+// only the first Retry-After string is retained, without trimming its raw byte
+// budget. The header map/body is not retained; cause remains borrowed.
+// Invalid status or oversized metadata returns nil and an error wrapping
+// ErrInvalidResponse.
 func NewError(statusCode int, header http.Header, cause error) (*Error, error) {
 	if statusCode < 100 || statusCode > 999 {
 		return nil, fmt.Errorf("%w: status must be between 100 and 999", ErrInvalidResponse)
@@ -135,7 +148,10 @@ func (err *Error) RetryDelay(now time.Time) (time.Duration, bool) {
 }
 
 // ParseRetryAfter parses delta-seconds or an HTTP date. Past dates produce an
-// immediate retry hint. Oversized delta-seconds saturate safely.
+// immediate retry hint. Oversized delta-seconds saturate safely. The raw input
+// is byte-bounded before whitespace trimming; malformed input returns false.
+// Unsigned decimal seconds and http.ParseTime date formats are accepted; this
+// parser does not sleep, validate operation safety or enforce policy budgets.
 func ParseRetryAfter(value string, now time.Time) (time.Duration, bool) {
 	if len(value) > MaxRetryAfterBytes {
 		return 0, false

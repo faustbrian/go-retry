@@ -7,6 +7,9 @@ import (
 	retry "github.com/faustbrian/go-retry/v2"
 )
 
+// FuzzBackoffNeverProducesNegativeDelay varies integer durations/attempts and
+// checks deterministic strategies, including saturation; it does not cover NaN
+// jitter factors or assert a statistical distribution.
 func FuzzBackoffNeverProducesNegativeDelay(fuzz *testing.F) {
 	fuzz.Add(uint(1), int64(time.Second), uint64(2), uint(2))
 	fuzz.Add(^uint(0), int64(1<<63-1), ^uint64(0), uint(63))
@@ -29,6 +32,8 @@ func FuzzBackoffNeverProducesNegativeDelay(fuzz *testing.F) {
 	})
 }
 
+// FuzzPolicyValidationDoesNotAcceptContradictoryDelayBounds checks admitted
+// count/delay configurations, including zero MaxDelay meaning no upper cap.
 func FuzzPolicyValidationDoesNotAcceptContradictoryDelayBounds(fuzz *testing.F) {
 	fuzz.Add(int64(time.Second), int64(2*time.Second), uint(3))
 	fuzz.Fuzz(func(t *testing.T, minimum, maximum int64, attempts uint) {

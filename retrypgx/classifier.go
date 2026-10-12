@@ -1,5 +1,9 @@
 // Package retrypgx classifies PostgreSQL errors by SQLSTATE. It does not
-// decide whether a transaction or statement is safe to repeat.
+// decide whether a transaction or statement is safe to repeat. NewClassifier
+// or the zero Classifier is ready and stateless. It imports pgx error helpers
+// but opens no pool or connection. Unlike the canonical adapter, SQLSTATE
+// classification comes before caller cancellation and nil context is accepted.
+// Context/error traversal is synchronous; custom implementations are trusted.
 //
 // Deprecated: use github.com/faustbrian/go-retry/v2/adapters/postgres. This
 // package remains supported through the documented compatibility interval.
@@ -23,6 +27,10 @@ func NewClassifier() Classifier { return Classifier{} }
 
 // Classify implements retry.Classifier. Serialization, deadlock, lock
 // availability, server restart, and connection-class failures are transient.
+// PgError takes precedence over caller cancellation. After that, a returned
+// error matching ctx.Err is permanent; pgx/EOF connection evidence precedes
+// remaining returned context sentinels. This ordering is retained compatibility,
+// not proof that a failed transaction can be safely replayed.
 func (Classifier) Classify(ctx context.Context, err error) (retry.Classification, error) {
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) {

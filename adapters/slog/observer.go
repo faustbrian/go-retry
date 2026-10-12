@@ -13,8 +13,12 @@ const MaxPolicyIDLength = 128
 
 // Options configures structured retry observation logging.
 type Options struct {
-	Logger   *slog.Logger
-	Level    slog.Level
+	// Logger is required and borrowed; its handler lifetime remains caller-owned.
+	Logger *slog.Logger
+	// Level selects the slog level; zero is the standard info level.
+	Level slog.Level
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Supply a stable non-sensitive policy label, not request payloads.
 	PolicyID string
 }
 
@@ -37,7 +41,9 @@ func New(options Options) (*Observer, error) {
 }
 
 // Observe records one event without operation errors or values. A nil or zero
-// observer is a no-op.
+// observer is a no-op. Calls use Background and can block, overlap or reenter
+// without a package lock. Direct handler panics propagate; retry execution
+// contains them. Logger/handler lifetime and concurrency remain caller-owned.
 func (observer *Observer) Observe(observation retry.Observation) {
 	if observer == nil || observer.logger == nil {
 		return

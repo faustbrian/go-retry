@@ -1,5 +1,10 @@
 // Package retryadapter provides explicit classifier seams for integrations
 // whose transient failures are domain-specific. It never decides idempotency.
+// Choose Queue, Webhook, Filesystem or ObjectStorage with a non-nil predicate.
+// The predicate is borrowed and called synchronously without context checks or
+// direct panic recovery; separate executions may overlap or reenter. Consumers
+// own synchronization, bounded work and integration-resource lifetimes. No
+// backend dependency, transport, acknowledgement or background work is introduced.
 package retryadapter
 
 import (

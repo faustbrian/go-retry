@@ -36,6 +36,9 @@ cleanup, not recovery of a dispatched side effect.
 an unknown outcome. Its human-readable terminal errors are bounded and custom
 context messages are normalized. Machine cause traversal and bounded history
 may retain known error objects; callers must not treat those as safe log text.
+Legacy Do can share its returned History slice with terminal error metadata;
+mutating that slice can change later accessor snapshots. Accessors copy the
+current slice, not retained error objects. DoStrict stores a separate slice.
 `Do`, marking errors, and flat HTTP errors also use fixed categories without
 formatting application causes. Machine cause traversal is an explicit trusted
 diagnostic surface, not permission to log private causes.

@@ -1,7 +1,18 @@
 package retry // import "github.com/faustbrian/go-retry/v2"
 
 Package retry executes explicitly classified operations under bounded retry
-policies. It never decides whether an operation is safe to repeat.
+policies. Start with a constructed Policy and DoStrict when dispatch outcome
+matters, or Do for its compatibility cancellation rules. It never decides
+idempotency or undoes side effects. Attempt limits are mandatory; duration
+budgets and shared resilience admission are explicit opt-ins.
+
+Policies borrow collaborators and captured state. Calls are synchronous,
+may overlap or reenter and are not forcibly preempted. Built-in strategies
+have immutable state; consumers synchronize custom collaborators and RNGs.
+There are no package workers or shutdown lifecycle. HTTP, PostgreSQL, logging
+and telemetry adapters have distinct canonical and compatibility contracts; the
+module includes their external dependencies, while the core imports resilience.
+No retry-owned transport, database pool or telemetry exporter is created.
 
 CONSTANTS
 
@@ -9,7 +20,8 @@ const MaxHistoryEntries = 1024
     MaxHistoryEntries is the largest failure history retained by a policy.
 
 const MaxStrictTerminalErrorBytes = 66
-    MaxStrictTerminalErrorBytes bounds every human-readable DoStrict error.
+    MaxStrictTerminalErrorBytes bounds human-readable errors returned by
+    DoStrict, not panic payloads, retained causes or value formatting.
 
 
 VARIABLES
@@ -34,21 +46,36 @@ func Retryable(err error) error
 TYPES
 
 type Attempt struct {
-	Attempt        uint
-	Elapsed        time.Duration
-	Delay          time.Duration
+	// Attempt is the one-based physical callback count.
+	Attempt uint
+	// Elapsed is nonnegative clock-sampled time since execution began.
+	Elapsed time.Duration
+	// Delay is the selected next pause, even if a budget rejects it before sleep.
+	Delay time.Duration
+	// Classification is the accepted result, or zero for unclassified strict outcomes.
 	Classification Classification
-	Err            error
+	// Err retains a classified operation error, or nil for unclassified strict outcomes.
+	// Retained errors are not copied or safe log text.
+	Err error
 }
-    Attempt records bounded failure metadata. It never retains operation values.
+    Attempt records an unsuccessful dispatch, not a successful operation value.
+    Classified failures retain the original error object; strict unknown/invalid
+    outcomes retain no error and have zero Classification and Delay.
 
 type AttemptResult[T any] struct {
-	Value   T
+	// Value is returned to the caller only with OutcomeKnown and nil error.
+	Value T
+	// Outcome must be OutcomeKnown, or OutcomeUnknown with a non-nil error.
+	// OutcomeNotDispatched is invalid after invocation; errors alone do not
+	// establish the dispatch outcome.
 	Outcome Outcome
 }
     AttemptResult declares the value and side-effect outcome of one attempt.
 
 type Backoff interface {
+	// Delay receives the failed operation ordinal (1 before the first retry)
+	// and previous fully selected delay. It must bound its synchronous work;
+	// returned negative durations are clamped by Policy. Calls may overlap.
 	Delay(attempt uint, previous time.Duration, random Random) time.Duration
 }
     Backoff computes the delay before retry attempt. Attempt starts at one for
@@ -64,21 +91,26 @@ func DecorrelatedJitter(base time.Duration) Backoff
 
 func EqualJitter(backoff Backoff) Backoff
     EqualJitter retains half of the wrapped delay and uniformly jitters the
-    remainder.
+    remainder. Nil backoff yields zero; nil randomness selects the lower bound.
+    The wrapped implementation and random source are borrowed.
 
 func Exponential(initial time.Duration, multiplier uint64) Backoff
     Exponential returns initial*multiplier^(attempt-1) with saturation.
 
 func ExponentialJitter(initial time.Duration, multiplier uint64, factor float64) Backoff
     ExponentialJitter applies centered proportional jitter to exponential
-    backoff. Factor is clamped to [0, 1].
+    backoff. Finite Factor is clamped to [0, 1]; NaN is not validated and has no
+    promised jitter range.
 
 func Fibonacci(unit time.Duration) Backoff
     Fibonacci returns unit multiplied by the attempt-th Fibonacci number,
     where the first two retry delays both equal unit.
 
 func FullJitter(backoff Backoff) Backoff
-    FullJitter chooses uniformly between zero and the wrapped delay.
+    FullJitter borrows backoff and chooses between zero and its nonnegative
+    delay. Nil backoff yields zero; nil randomness selects zero after the
+    wrapped delay is computed. A typed-nil implementation can still panic.
+    Randomness must meet Random's uniformity contract.
 
 func Linear(initial, increment time.Duration) Backoff
     Linear returns initial + (attempt-1)*increment, using saturating arithmetic.
@@ -87,6 +119,7 @@ func Polynomial(base, coefficient time.Duration, power uint) Backoff
     Polynomial returns base + coefficient*attempt^power with saturation.
 
 type BudgetError struct {
+	// Kind selects a known budget category; unrecognized values use generic text.
 	Kind BudgetKind
 
 	// Has unexported fields.
@@ -95,11 +128,13 @@ type BudgetError struct {
     budget.
 
 func (err *BudgetError) Error() string
+    Error returns a fixed bounded category, not the retained cause text.
 
 func (err *BudgetError) Result() Result
     Result returns a defensive copy of terminal metadata.
 
 func (err *BudgetError) Unwrap() error
+    Unwrap exposes the retained machine cause, which may contain private data.
 
 type BudgetKind string
     BudgetKind identifies the configured budget that stopped execution.
@@ -120,11 +155,13 @@ type CanceledError struct {
     CanceledError reports cancellation by the caller or its deadline.
 
 func (err *CanceledError) Error() string
+    Error returns a fixed bounded category, not the retained cause text.
 
 func (err *CanceledError) Result() Result
     Result returns a defensive copy of terminal metadata.
 
 func (err *CanceledError) Unwrap() error
+    Unwrap exposes the retained machine cause, which may contain private data.
 
 type Classification uint8
     Classification is an explicit decision about one operation failure.
@@ -136,41 +173,74 @@ const (
 	ClassificationRetryable
 )
 type Classifier interface {
+	// Classify receives the caller context and exact operation error. Return
+	// ClassificationPermanent or ClassificationRetryable; other results stop
+	// execution as classifier failures.
 	Classify(context.Context, error) (Classification, error)
 }
     Classifier classifies an operation failure. Returning an error means the
-    classifier itself failed and execution stops.
+    classifier itself failed and execution stops. It must be bounded and safe
+    for overlapping calls when shared. Classification never establishes replay
+    safety; error traversal and retained causes remain caller trust boundaries.
 
 func RetryableClassifier() Classifier
-    RetryableClassifier returns a classifier that retries RetryableError values
-    and treats every other error as permanent.
+    RetryableClassifier returns a classifier that retries RetryableError
+    values and treats every other error as permanent. It does not inspect
+    PermanentError first: a nested RetryableError still makes the chain
+    retryable. Context and outcome precedence belong to the execution variant,
+    not this classifier.
 
 type ClassifyFunc func(context.Context, error) (Classification, error)
-    ClassifyFunc adapts a function to Classifier.
+    ClassifyFunc borrows a function as Classifier. Direct calls propagate
+    panics; Do and DoStrict contain classifier panics with distinct terminal
+    errors. A nil function is rejected as a required policy collaborator.
 
 func (function ClassifyFunc) Classify(ctx context.Context, err error) (Classification, error)
     Classify invokes the adapted function.
 
 type Clock interface {
+	// Now returns the time used for budgets, history and delay hints.
 	Now() time.Time
 }
-    Clock supplies policy time. Implementations may additionally implement
-    TimeoutClock to make per-attempt timeouts deterministic.
+    Clock supplies policy time for elapsed accounting. Implementations must be
+    safe for concurrent calls when the policy is shared and should provide a
+    consistent time progression. Backward elapsed differences are clamped to
+    zero. Implement TimeoutClock as well to control per-attempt deadlines.
 
 type Config struct {
-	Backoff        Backoff
-	MaxAttempts    uint
-	MaxElapsed     time.Duration
+	// Backoff is required; its implementation is borrowed and called synchronously.
+	Backoff Backoff
+	// MaxAttempts is required and includes the original call; one means no retries.
+	MaxAttempts uint
+	// MaxElapsed is a sampled elapsed budget; zero disables it. Attempt contexts
+	// use the remaining budget, but collaborators and sleeps are not forcibly preempted.
+	MaxElapsed time.Duration
+	// AttemptTimeout adds a cooperative deadline per operation; zero disables it
+	// unless MaxElapsed supplies a remaining deadline.
 	AttemptTimeout time.Duration
-	MinDelay       time.Duration
-	MaxDelay       time.Duration
-	MaxSleep       time.Duration
-	Clock          Clock
-	Sleeper        Sleeper
-	Random         Random
-	Classifier     Classifier
-	Observer       Observer
-	HistoryLimit   uint
+	// MinDelay floors selected retry delays, including available server hints.
+	MinDelay time.Duration
+	// MaxDelay caps selected delays and hints; zero disables the cap.
+	MaxDelay time.Duration
+	// MaxSleep caps accumulated successful sleep requests; zero disables it.
+	// It does not measure actual sleeper wall time.
+	MaxSleep time.Duration
+	// Clock is required and borrowed for elapsed accounting and optional deadlines.
+	Clock Clock
+	// Sleeper is required and borrowed; it receives the caller context, not
+	// an attempt or MaxElapsed-derived context.
+	Sleeper Sleeper
+	// Random is optional and borrowed; nil selects deterministic jitter lower bounds.
+	Random Random
+	// Classifier is required and receives the original failure and caller context,
+	// not the attempt context.
+	Classifier Classifier
+	// Observer is optional, synchronous and borrowed. Engine calls contain panics,
+	// not blocking or arbitrary side effects.
+	Observer Observer
+	// HistoryLimit retains the most recent recorded failures up to MaxHistoryEntries.
+	// Zero disables history; error objects are borrowed and not byte-bounded.
+	HistoryLimit uint
 	// UseResilienceBudget consumes the shared work-amplification scope attached
 	// to the execution context. Existing standalone behavior is unchanged when false.
 	UseResilienceBudget bool
@@ -201,10 +271,13 @@ func (err *ContextError) Unwrap() error
     Unwrap returns only a normalized context sentinel.
 
 type DelayHint interface {
+	// RetryDelay reports an available delay at the supplied clock time. Calls
+	// are synchronous without context, timeout or panic recovery.
 	RetryDelay(time.Time) (time.Duration, bool)
 }
     DelayHint is implemented by classified errors that carry a server-provided
-    minimum retry delay, such as HTTP Retry-After.
+    minimum retry delay, such as HTTP Retry-After. Hints are advisory: MinDelay
+    and MaxDelay still apply. A positive hint can be shortened by MaxDelay.
 
 type ExhaustedError struct {
 	// Has unexported fields.
@@ -212,31 +285,46 @@ type ExhaustedError struct {
     ExhaustedError reports that MaxAttempts stopped a retryable operation.
 
 func (err *ExhaustedError) Error() string
+    Error returns a fixed bounded category, not the retained cause text.
 
 func (err *ExhaustedError) Result() Result
     Result returns a defensive copy of terminal metadata.
 
 func (err *ExhaustedError) Unwrap() error
+    Unwrap exposes the retained machine cause, which may contain private data.
 
 type Observation struct {
-	Attempt        uint
-	Elapsed        time.Duration
-	NextDelay      time.Duration
+	// Attempt is the completed callback ordinal, or zero before first dispatch.
+	Attempt uint
+	// Elapsed is the sampled elapsed time at this notification.
+	Elapsed time.Duration
+	// NextDelay is a selected pause, not a completed sleep.
+	NextDelay time.Duration
+	// Classification is zero when no failure was classified.
 	Classification Classification
-	Reason         Reason
+	// Reason is empty for a selected retry pause and populated for terminal events.
+	Reason Reason
 }
-    Observation is a bounded notification for one completed attempt.
+    Observation describes a reached notification site; it is not proof of a
+    physical dispatch. Early work-budget refusal can report attempt zero, and
+    several cancellation, budget and collaborator-failure paths emit no event.
 
 type ObserveFunc func(Observation)
-    ObserveFunc adapts a function to Observer.
+    ObserveFunc borrows a callback as Observer. A nil function panics on
+    direct invocation; policy construction treats it as an absent optional
+    collaborator.
 
 func (function ObserveFunc) Observe(observation Observation)
     Observe invokes the adapted function.
 
 type Observer interface {
+	// Observe consumes a copied notification with no operation value or error.
 	Observe(Observation)
 }
-    Observer receives bounded lifecycle metadata.
+    Observer receives scalar lifecycle metadata synchronously. Calls may overlap
+    or reenter execution; no package lock is held. Engine calls contain panics,
+    but direct calls propagate them. Blocking observers block the retry caller.
+    Notifications are not a complete audit of all attempt or terminal paths.
 
 type Outcome uint8
     Outcome describes whether an operation was dispatched and whether its
@@ -250,26 +338,43 @@ const (
 	// OutcomeUnknown means dispatch occurred but the result cannot be proved.
 	OutcomeUnknown
 )
-type PermanentError struct{ Cause error }
+type PermanentError struct {
+	// Cause is borrowed for errors.Is/As traversal, never formatted by Error.
+	Cause error
+}
     PermanentError explicitly marks a cause as ineligible for retry.
 
 func (err *PermanentError) Error() string
+    Error returns a fixed bounded category, not the retained cause text.
 
 func (err *PermanentError) Unwrap() error
+    Unwrap exposes the retained machine cause, which may contain private data.
 
 type Policy struct {
 	// Has unexported fields.
 }
-    Policy is an immutable, explicitly bounded retry policy.
+    Policy copies configuration but borrows collaborators and captured state.
+    Construct it with NewPolicy or NewPolicyStrict; the zero Policy is unusable.
+    Concurrent executions are safe only when all shared collaborators are safe;
+    retry owns no worker, shutdown lifecycle, callback lock or forced
+    preemption.
 
 func NewPolicy(config Config) (*Policy, error)
-    NewPolicy validates and copies config.
+    NewPolicy validates finite attempt count, required dependencies and
+    consistent nonnegative duration/history limits. Scalars are copied;
+    dependencies are borrowed. Typed-nil optional Random/Observer values
+    normalize to absent. It returns nil with an ErrInvalidPolicy-wrapping error
+    on invalid config.
 
 func NewPolicyStrict(config Config) (*Policy, error)
     NewPolicyStrict validates and copies config while rejecting explicitly
-    supplied typed-nil optional collaborators.
+    supplied typed-nil optional collaborators. Plain nil Random/Observer remain
+    absent; all scalar validation and borrowed ownership match NewPolicy.
+    This constructor does not choose DoStrict automatically.
 
 type Random interface {
+	// Int64n must return a uniform sample for positive upper. It may be called
+	// concurrently by a shared policy; it is not a cryptographic interface.
 	Int64n(upper int64) int64
 }
     Random is an injected, concurrency-safe source of uniform integers in [0,
@@ -305,30 +410,56 @@ const ReasonOutcomeUnknown Reason = "outcome_unknown"
     be proved.
 
 type Result struct {
-	Attempts   uint
-	Elapsed    time.Duration
+	// Attempts counts dispatched callbacks, including success or ambiguous results.
+	Attempts uint
+	// Elapsed includes observed collaborator time using the injected Clock.
+	Elapsed time.Duration
+	// FinalDelay is the last selected delay, not proof that it was slept.
 	FinalDelay time.Duration
-	Reason     Reason
-	History    []Attempt
+	// Reason is the terminal category, not a replay-safety decision.
+	Reason Reason
+	// History is the most recent recorded failures, bounded by count.
+	// Legacy Do can share this slice with its terminal error metadata; do not
+	// mutate it if that metadata must remain stable. Error objects remain borrowed.
+	History []Attempt
 }
-    Result contains bounded execution metadata and never retains operation
-    values.
+    Result contains retry metadata rather than the returned T. Retained errors
+    may reference arbitrary caller data; history is not a byte or privacy bound.
 
 func Do[T any](ctx context.Context, policy *Policy, operation func(context.Context) (T, error)) (T, Result, error)
     Do executes operation under policy. The caller remains solely responsible
-    for deciding whether repeating operation is safe.
+    for deciding whether repeating operation is safe. ctx must be non-nil;
+    nil policy/operation returns ErrInvalidPolicy. Use a constructed policy.
+    Calls are synchronous without operation-panic recovery. The caller context
+    wins after an operation returns, including when that callback succeeded;
+    failure paths return the zero T and may retain classified errors in history.
+    Its returned History can alias stored terminal metadata; error Result
+    accessors copy their current slice, not the referenced error objects.
+    Attempt deadlines require callback cooperation and do not veto a nil
+    error from an otherwise successful operation. DoStrict differs for known
+    outcomes. Acquired work permits and attempt contexts are released on
+    normal/error/panic exits; side effects are not rolled back and permit
+    completion errors ignored.
 
-type RetryableError struct{ Cause error }
+type RetryableError struct {
+	// Cause is borrowed for errors.Is/As traversal, never formatted by Error.
+	Cause error
+}
     RetryableError explicitly marks a cause as eligible for bounded retry.
 
 func (err *RetryableError) Error() string
+    Error returns a fixed bounded category, not the retained cause text.
 
 func (err *RetryableError) Unwrap() error
+    Unwrap exposes the retained machine cause, which may contain private data.
 
 type SeededRandom struct {
 	// Has unexported fields.
 }
-    SeededRandom is a deterministic, concurrency-safe PCG random source.
+    SeededRandom serializes a deterministic PCG stream. Construct it with
+    NewRandom; the zero value cannot serve positive bounds. Sharing is race-safe
+    but scheduling assigns samples to callers, so per-call sequences can differ.
+    It is not a cryptographic source.
 
 func NewRandom(seed1, seed2 uint64) *SeededRandom
     NewRandom constructs a deterministic random source from explicit seeds.
@@ -337,17 +468,27 @@ func (random *SeededRandom) Int64n(upper int64) int64
     Int64n returns a uniform value in [0, upper).
 
 type Sleeper interface {
+	// Sleep receives a nonnegative selected delay. Nil reports completion and
+	// charges that requested duration to MaxSleep; an error stops execution.
 	Sleep(context.Context, time.Duration) error
 }
-    Sleeper waits without owning policy or retry decisions.
+    Sleeper waits synchronously without owning retry decisions. It must honor
+    caller cancellation, bound its work and synchronize state for shared
+    policies. The executor does not measure actual sleep or forcibly interrupt a
+    call.
 
 type StrictOperation[T any] func(context.Context) (AttemptResult[T], error)
     StrictOperation executes one attempt and declares whether its outcome is
-    known. It must never label an ambiguous side effect as known.
+    known. It must never label an ambiguous side effect as known or return
+    OutcomeNotDispatched after invocation. Captured state is borrowed; calls
+    execute synchronously and operation panics propagate, with owned cleanup.
 
 type StrictResult[T any] struct {
-	Value   T
-	Retry   Result
+	// Value is set only for known success and otherwise is the zero T.
+	Value T
+	// Retry contains bounded metadata; retained error objects may be private.
+	Retry Result
+	// Outcome identifies dispatch knowledge, never permission to repeat side effects.
 	Outcome Outcome
 }
     StrictResult contains a value only for known success, bounded retry
@@ -355,14 +496,23 @@ type StrictResult[T any] struct {
 
 func DoStrict[T any](ctx context.Context, policy *Policy, operation StrictOperation[T]) (StrictResult[T], error)
     DoStrict executes operation under policy without retrying an unknown outcome
-    and returns only bounded human-readable terminal errors.
+    and returns only bounded human-readable terminal errors. Nil/typed-nil ctx,
+    nil policy or operation returns ErrInvalidPolicy. Use a constructed policy.
+    Known success wins caller/attempt deadline races. Known failures retain
+    timeout and classification precedence before later caller-cancellation
+    checks. Unknown or invalid outcomes terminate without classification,
+    delay selection or retry. Human text is safe by category, not arbitrary
+    cause/history traversal. Collaborators may block or overlap; deadlines
+    are cooperative. Acquired permits and attempt contexts are released,
+    not side effects rolled back. Permit completion errors are ignored and
+    completion/operation panics propagate.
 
 type SystemClock struct{}
     SystemClock uses the process monotonic wall clock. It contains no global
     mutable state.
 
 func (SystemClock) Now() time.Time
-    Now returns the current time.
+    Now returns time.Now; SystemClock's zero value is ready and concurrent-safe.
 
 func (SystemClock) WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc)
     WithTimeout derives a standard context timeout.
@@ -371,19 +521,28 @@ type SystemSleeper struct{}
     SystemSleeper waits with a context-owned timer and always stops the timer.
 
 func (SystemSleeper) Sleep(ctx context.Context, delay time.Duration) error
-    Sleep waits for delay or context cancellation.
+    Sleep waits for delay or cancellation; ctx must be non-nil. Zero/negative
+    delays use an immediately ready timer. If timer and cancellation are both
+    ready, either select branch may win. No timer or background worker is
+    retained.
 
 type TimeoutClock interface {
 	Clock
+	// WithTimeout returns a usable non-nil child context and cancellation function.
+	// The executor cancels it at the end of the attempt, including panic unwinding.
 	WithTimeout(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
-    TimeoutClock derives deadline contexts using an injected clock.
+    TimeoutClock derives cooperative deadline contexts using an injected clock.
+    Calls are synchronous and may overlap; preserve caller values/cancellation.
 
 package retryhttp // import "github.com/faustbrian/go-retry/v2/adapters/http"
 
 Package retryhttp classifies bounded HTTP response failures and parses
-Retry-After without deciding whether an HTTP operation is safe to repeat.
-Its import path is github.com/faustbrian/go-retry/v2/adapters/http.
+Retry-After without deciding whether an HTTP operation is safe to repeat. Its
+import path is github.com/faustbrian/go-retry/v2/adapters/http. Start with New
+for status/transport classification and NewError for immutable bounded response
+metadata. Transient callbacks are borrowed, synchronous and unsandboxed.
+No HTTP client, response body, replay key or connection lifecycle is owned.
 
 CONSTANTS
 
@@ -404,7 +563,10 @@ FUNCTIONS
 
 func ParseRetryAfter(value string, now time.Time) (time.Duration, bool)
     ParseRetryAfter parses delta-seconds or an HTTP date. Past dates produce an
-    immediate retry hint. Oversized delta-seconds saturate safely.
+    immediate retry hint. Oversized delta-seconds saturate safely. The raw input
+    is byte-bounded before whitespace trimming; malformed input returns false.
+    Unsigned decimal seconds and http.ParseTime date formats are accepted; this
+    parser does not sleep, validate operation safety or enforce policy budgets.
 
 
 TYPES
@@ -412,14 +574,21 @@ TYPES
 type Classifier struct {
 	// Has unexported fields.
 }
-    Classifier classifies HTTP failures without making idempotency decisions.
+    Classifier owns an immutable status map but borrows Transient.
+    Concurrent use requires a concurrent-safe predicate. Construct with New;
+    nil/zero classifiers report ErrInvalidPolicy. There is no transport or body
+    ownership.
 
 func New(options Options) (*Classifier, error)
     New validates options and copies them into an immutable classifier.
 
 func (classifier *Classifier) Classify(_ context.Context, err error) (retry.Classification, error)
     Classify implements retry.Classifier. Classification does not make replay
-    safe; the operation owner retains that decision.
+    safe; the operation owner retains that decision. ctx is not inspected.
+    Canonical Error chains take precedence over Transient, including permanent
+    status responses. Foreign error types can reach Transient. Direct
+    predicate panic/blocking propagates; retry execution adds classifier panic
+    containment.
 
 type Error struct {
 	// Has unexported fields.
@@ -428,7 +597,11 @@ type Error struct {
 
 func NewError(statusCode int, header http.Header, cause error) (*Error, error)
     NewError validates and snapshots only the HTTP metadata needed for retry
-    classification and delay selection.
+    classification and delay selection. Nil headers and causes are accepted;
+    only the first Retry-After string is retained, without trimming its raw
+    byte budget. The header map/body is not retained; cause remains borrowed.
+    Invalid status or oversized metadata returns nil and an error wrapping
+    ErrInvalidResponse.
 
 func (err *Error) Error() string
     Error returns bounded response status text without formatting the cause.
@@ -443,8 +616,12 @@ func (err *Error) Unwrap() error
     Unwrap returns the exact caller-provided cause.
 
 type Options struct {
+	// RetryStatuses is copied. Nil selects defaults; an explicit empty slice
+	// disables status retries. Entries must be unique integers from 100 through 999.
 	RetryStatuses []int
-	Transient     func(error) bool
+	// Transient is an optional borrowed transport predicate. Calls are synchronous,
+	// may overlap or reenter, and panic directly; synchronize captured state.
+	Transient func(error) bool
 }
     Options configures protocol classification. RetryStatuses replaces the
     conservative default set. Transient may classify transport errors, but does
@@ -453,8 +630,12 @@ type Options struct {
 package retryotel // import "github.com/faustbrian/go-retry/v2/adapters/otel"
 
 Package retryotel adapts bounded retry observations to caller-owned
-OpenTelemetry metrics without recording operation errors or values. Its import
-path is github.com/faustbrian/go-retry/v2/adapters/otel.
+OpenTelemetry metrics without recording operation errors or values. Its
+import path is github.com/faustbrian/go-retry/v2/adapters/otel. New borrows a
+provider and creates synchronous instruments; nil/zero observers are no-ops.
+Metrics count notifications, not a complete dispatch audit. The caller owns
+low-cardinality labels, reader/exporter lifetime and shutdown. No global
+provider, asynchronous instrument callback or exporter is created.
 
 CONSTANTS
 
@@ -467,26 +648,44 @@ TYPES
 type Observer struct {
 	// Has unexported fields.
 }
-    Observer records attempt counts, elapsed time, and selected delays.
+    Observer counts received observations and records cumulative elapsed
+    time and selected delays per notification. retry.attempts is not a
+    physical-dispatch counter: retry execution can omit events or report early
+    admission denial. The observer borrows instruments/provider resources and
+    owns no shutdown.
 
 func New(options Options) (*Observer, error)
-    New validates options and constructs bounded retry metric instruments.
+    New rejects nil/typed-nil providers and oversized policy labels, then
+    invokes provider/instrument constructors synchronously. Their errors are
+    returned unchanged; prior instrument creation is not transactionally rolled
+    back. Constructor panics/blocking propagate; concurrent/reentrant calls
+    require a provider supporting those calls. No global provider is selected.
 
 func (observer *Observer) Observe(observation retry.Observation)
     Observe records bounded attributes synchronously. A nil or zero observer is
-    a no-op.
+    a no-op. Calls use Background, not an execution deadline, and may overlap or
+    reenter. Blocking instruments block the direct caller and panics propagate;
+    execution contains observer panics. Provider lifetime remains caller-owned.
 
 type Options struct {
+	// MeterProvider is required and borrowed; the caller owns readers, exporters
+	// and shutdown after all observer calls finish.
 	MeterProvider metric.MeterProvider
-	PolicyID      string
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Use a stable non-sensitive policy label.
+	PolicyID string
 }
     Options configures retry metric instruments.
 
 package retrypostgres // import "github.com/faustbrian/go-retry/v2/adapters/postgres"
 
 Package retrypostgres classifies PostgreSQL failures conservatively without
-deciding whether a transaction or statement is safe to repeat. Its import path
-is github.com/faustbrian/go-retry/v2/adapters/postgres.
+deciding whether a transaction or statement is safe to repeat. Its import
+path is github.com/faustbrian/go-retry/v2/adapters/postgres. New or the zero
+Classifier is ready for concurrent use. It imports pgx error helpers but opens
+no pool or connection and starts no worker. It classifies SQLSTATE and transport
+evidence; caller cancellation wins before backend evidence. Statements,
+transactions, outcome reconciliation and replay keys stay caller-owned.
 
 TYPES
 
@@ -499,13 +698,20 @@ func New() Classifier
 
 func (Classifier) Classify(ctx context.Context, err error) (retry.Classification, error)
     Classify implements retry.Classifier. Caller cancellation and deadline
-    always take precedence over otherwise transient backend failures.
+    always take precedence over otherwise transient backend failures. Nil/typed-
+    nil contexts are rejected. With an active context, a PgError takes priority
+    over context sentinels wrapped in the failure; otherwise returned context
+    errors precede connection/EOF/network evidence. Traversal is synchronous and
+    custom error graphs may block or panic; no database operation is performed.
 
 package retryslog // import "github.com/faustbrian/go-retry/v2/adapters/slog"
 
 Package retryslog adapts bounded retry observations to caller-owned slog
 logging without recording operation errors or values. Its import path is
-github.com/faustbrian/go-retry/v2/adapters/slog.
+github.com/faustbrian/go-retry/v2/adapters/slog. New borrows a caller logger;
+nil/zero observers are no-ops. Direct calls are synchronous with Background and
+require handlers safe for overlapping/reentrant use. The caller owns handler
+lifetime and redacted, low-cardinality policy labels.
 
 CONSTANTS
 
@@ -525,19 +731,30 @@ func New(options Options) (*Observer, error)
 
 func (observer *Observer) Observe(observation retry.Observation)
     Observe records one event without operation errors or values. A nil or zero
-    observer is a no-op.
+    observer is a no-op. Calls use Background and can block, overlap or reenter
+    without a package lock. Direct handler panics propagate; retry execution
+    contains them. Logger/handler lifetime and concurrency remain caller-owned.
 
 type Options struct {
-	Logger   *slog.Logger
-	Level    slog.Level
+	// Logger is required and borrowed; its handler lifetime remains caller-owned.
+	Logger *slog.Logger
+	// Level selects the slog level; zero is the standard info level.
+	Level slog.Level
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Supply a stable non-sensitive policy label, not request payloads.
 	PolicyID string
 }
     Options configures structured retry observation logging.
 
 package retryadapter // import "github.com/faustbrian/go-retry/v2/retryadapter"
 
-Package retryadapter provides explicit classifier seams for integrations whose
-transient failures are domain-specific. It never decides idempotency.
+Package retryadapter provides explicit classifier seams for integrations
+whose transient failures are domain-specific. It never decides idempotency.
+Choose Queue, Webhook, Filesystem or ObjectStorage with a non-nil predicate.
+The predicate is borrowed and called synchronously without context checks or
+direct panic recovery; separate executions may overlap or reenter. Consumers
+own synchronization, bounded work and integration-resource lifetimes. No backend
+dependency, transport, acknowledgement or background work is introduced.
 
 FUNCTIONS
 
@@ -560,7 +777,11 @@ func Webhook(transient func(error) bool) (retry.Classifier, error)
 package retryhttp // import "github.com/faustbrian/go-retry/v2/retryhttp"
 
 Package retryhttp classifies HTTP response failures and parses Retry-After.
-It does not decide whether an HTTP operation is safe to repeat.
+It does not decide whether an HTTP operation is safe to repeat. Start with
+NewClassifier and StatusError. Admission and parsing delegate to the canonical
+adapter, but Error retains its flat named identity and mutable status field.
+Foreign canonical errors may reach Transient rather than flat-status handling.
+Classifiers borrow callbacks; no HTTP client, body or lifecycle is owned.
 
 Deprecated: use github.com/faustbrian/go-retry/v2/adapters/http. This package
 remains supported through the documented compatibility interval.
@@ -592,7 +813,9 @@ TYPES
 type Classifier struct {
 	// Has unexported fields.
 }
-    Classifier classifies HTTP failures without making idempotency decisions.
+    Classifier owns admitted status configuration and borrows Transient.
+    The zero classifier treats failures as permanent; a nil pointer is rejected.
+    Concurrent calls require synchronized captured predicate state.
 
 func NewClassifier(options Options) (*Classifier, error)
     NewClassifier validates and copies options through the canonical admission
@@ -603,6 +826,8 @@ func (classifier *Classifier) Classify(ctx context.Context, err error) (retry.Cl
     permanent.
 
 type Error struct {
+	// StatusCode is mutable compatibility state. Invalid mutations classify permanent;
+	// RetryDelay still reads the constructor-admitted metadata snapshot.
 	StatusCode int
 
 	// Has unexported fields.
@@ -616,24 +841,34 @@ func StatusError(statusCode int, header http.Header, cause error) (*Error, error
     headers remain caller-owned.
 
 func (err *Error) Error() string
-    Error returns bounded status text without formatting the cause.
+    Error returns status text without formatting the cause; a nil receiver
+    panics.
 
 func (err *Error) RetryDelay(now time.Time) (time.Duration, bool)
-    RetryDelay implements retry.DelayHint using the admitted header snapshot.
+    RetryDelay uses the admitted header snapshot, independent of StatusCode
+    mutation. Literal errors have no hint; a nil receiver panics.
 
 func (err *Error) Unwrap() error
+    Unwrap exposes the borrowed cause. Unlike canonical Error, a nil receiver
+    panics.
 
 type Options struct {
+	// RetryStatuses is copied. Nil selects defaults; an explicit empty slice
+	// disables status retries. Entries must be unique integers from 100 through 999.
 	RetryStatuses []int
-	Transient     func(error) bool
+	// Transient is an optional borrowed transport predicate. Calls are synchronous,
+	// may overlap or reenter, and panic directly; synchronize captured state.
+	Transient func(error) bool
 }
     Options configures protocol classification. RetryStatuses replaces the
     conservative default set. Transient does not assert that replay is safe.
 
 package retrylog // import "github.com/faustbrian/go-retry/v2/retrylog"
 
-Package retrylog adapts bounded retry observations to log/slog, the logging API
-used by log. It never records operation errors or values.
+Package retrylog adapts bounded retry observations to log/slog. It never records
+operation errors or values. Start with New; handlers are borrowed and direct
+calls are synchronous. Nil/zero observers retain panic behavior, unlike the
+canonical adapter; no logger is closed.
 
 Deprecated: use github.com/faustbrian/go-retry/v2/adapters/slog. This package
 remains supported through the documented compatibility interval.
@@ -656,10 +891,18 @@ func New(options Options) (*Observer, error)
 
 func (observer *Observer) Observe(observation retry.Observation)
     Observe records one event without error messages or operation values.
+    Nil and zero observers panic, unlike the canonical observer. Calls use
+    Background and may block, overlap or reenter; direct handler panics
+    propagate. Legacy mapping renders ReasonOutcomeUnknown as unknown rather
+    than outcome_unknown.
 
 type Options struct {
-	Logger   *slog.Logger
-	Level    slog.Level
+	// Logger is required and borrowed; its handler lifetime remains caller-owned.
+	Logger *slog.Logger
+	// Level selects the slog level; zero is the standard info level.
+	Level slog.Level
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Supply a stable non-sensitive policy label, not request payloads.
 	PolicyID string
 }
     Options configures structured retry observation logging.
@@ -667,7 +910,11 @@ type Options struct {
 package retrypgx // import "github.com/faustbrian/go-retry/v2/retrypgx"
 
 Package retrypgx classifies PostgreSQL errors by SQLSTATE. It does not decide
-whether a transaction or statement is safe to repeat.
+whether a transaction or statement is safe to repeat. NewClassifier or the zero
+Classifier is ready and stateless. It imports pgx error helpers but opens no
+pool or connection. Unlike the canonical adapter, SQLSTATE classification comes
+before caller cancellation and nil context is accepted. Context/error traversal
+is synchronous; custom implementations are trusted.
 
 Deprecated: use github.com/faustbrian/go-retry/v2/adapters/postgres. This
 package remains supported through the documented compatibility interval.
@@ -681,13 +928,20 @@ func NewClassifier() Classifier
     NewClassifier constructs an immutable PostgreSQL classifier.
 
 func (Classifier) Classify(ctx context.Context, err error) (retry.Classification, error)
-    Classify implements retry.Classifier. Serialization, deadlock, lock
-    availability, server restart, and connection-class failures are transient.
+    Classify implements retry.Classifier. Serialization, deadlock,
+    lock availability, server restart, and connection-class failures are
+    transient. PgError takes precedence over caller cancellation. After that,
+    a returned error matching ctx.Err is permanent; pgx/EOF connection evidence
+    precedes remaining returned context sentinels. This ordering is retained
+    compatibility, not proof that a failed transaction can be safely replayed.
 
 package retrytelemetry // import "github.com/faustbrian/go-retry/v2/retrytelemetry"
 
-Package retrytelemetry adapts bounded retry observations to the standard
-OpenTelemetry API accepted by telemetry.
+Package retrytelemetry adapts bounded retry observations to OpenTelemetry
+metrics. Start with NewStrict to reject typed-nil providers while retaining
+the legacy instrumentation scope. Providers/instruments are borrowed, calls
+synchronous, and nil/zero observers retain panic behavior. The package owns no
+exporter or shutdown lifecycle.
 
 Deprecated: use github.com/faustbrian/go-retry/v2/adapters/otel. This package
 remains supported through the documented compatibility interval.
@@ -703,20 +957,34 @@ TYPES
 type Observer struct {
 	// Has unexported fields.
 }
-    Observer records attempt counts, elapsed time, and selected delays.
+    Observer counts received observations and records cumulative elapsed
+    time and selected delays per notification. retry.attempts is not a
+    physical-dispatch counter: retry execution can omit events or report early
+    admission denial. The observer borrows instruments/provider resources and
+    owns no shutdown.
 
 func New(options Options) (*Observer, error)
-    New constructs bounded retry metric instruments.
+    New constructs instruments synchronously under the retained legacy scope.
+    It rejects a nil interface, but a typed-nil provider can be invoked and
+    panic; use NewStrict to reject that case. Errors propagate without partial
+    rollback. No provider/reader/exporter is closed by this package.
 
 func NewStrict(options Options) (*Observer, error)
     NewStrict constructs bounded retry metric instruments and rejects an
     explicitly supplied typed-nil meter provider before invoking it.
 
 func (observer *Observer) Observe(observation retry.Observation)
-    Observe records bounded attributes and no operation values or errors.
+    Observe records bounded attributes and no operation values or errors. A nil
+    or zero observer panics, unlike the canonical observer. Calls use Background
+    and can block, overlap or reenter; direct sink panics propagate. Legacy
+    mapping renders ReasonOutcomeUnknown as unknown rather than outcome_unknown.
 
 type Options struct {
+	// MeterProvider is required and borrowed; the caller owns readers, exporters
+	// and shutdown after all observer calls finish.
 	MeterProvider metric.MeterProvider
-	PolicyID      string
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Use a stable non-sensitive policy label.
+	PolicyID string
 }
     Options configures retry metric instruments.

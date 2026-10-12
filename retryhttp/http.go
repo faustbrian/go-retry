@@ -1,5 +1,9 @@
 // Package retryhttp classifies HTTP response failures and parses Retry-After.
-// It does not decide whether an HTTP operation is safe to repeat.
+// It does not decide whether an HTTP operation is safe to repeat. Start with
+// NewClassifier and StatusError. Admission and parsing delegate to the canonical
+// adapter, but Error retains its flat named identity and mutable status field.
+// Foreign canonical errors may reach Transient rather than flat-status handling.
+// Classifiers borrow callbacks; no HTTP client, body or lifecycle is owned.
 //
 // Deprecated: use github.com/faustbrian/go-retry/v2/adapters/http. This package
 // remains supported through the documented compatibility interval.
@@ -29,11 +33,17 @@ var ErrInvalidResponse = canonical.ErrInvalidResponse
 // Options configures protocol classification. RetryStatuses replaces the
 // conservative default set. Transient does not assert that replay is safe.
 type Options struct {
+	// RetryStatuses is copied. Nil selects defaults; an explicit empty slice
+	// disables status retries. Entries must be unique integers from 100 through 999.
 	RetryStatuses []int
-	Transient     func(error) bool
+	// Transient is an optional borrowed transport predicate. Calls are synchronous,
+	// may overlap or reenter, and panic directly; synchronize captured state.
+	Transient func(error) bool
 }
 
-// Classifier classifies HTTP failures without making idempotency decisions.
+// Classifier owns admitted status configuration and borrows Transient. The
+// zero classifier treats failures as permanent; a nil pointer is rejected.
+// Concurrent calls require synchronized captured predicate state.
 type Classifier struct {
 	inner     *canonical.Classifier
 	transient func(error) bool
@@ -77,16 +87,21 @@ func (classifier *Classifier) Classify(ctx context.Context, err error) (retry.Cl
 // Error keeps the flat package's named identity and mutable status field.
 // Constructor metadata is bounded; cause traversal is explicitly caller-owned.
 type Error struct {
+	// StatusCode is mutable compatibility state. Invalid mutations classify permanent;
+	// RetryDelay still reads the constructor-admitted metadata snapshot.
 	StatusCode int
 	cause      error
 	response   *canonical.Error
 }
 
-// Error returns bounded status text without formatting the cause.
+// Error returns status text without formatting the cause; a nil receiver panics.
 func (err *Error) Error() string { return fmt.Sprintf("HTTP status %d", err.StatusCode) }
+
+// Unwrap exposes the borrowed cause. Unlike canonical Error, a nil receiver panics.
 func (err *Error) Unwrap() error { return err.cause }
 
-// RetryDelay implements retry.DelayHint using the admitted header snapshot.
+// RetryDelay uses the admitted header snapshot, independent of StatusCode
+// mutation. Literal errors have no hint; a nil receiver panics.
 func (err *Error) RetryDelay(now time.Time) (time.Duration, bool) {
 	if err.response == nil {
 		return 0, false

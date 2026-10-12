@@ -1,5 +1,8 @@
-// Package retrytelemetry adapts bounded retry observations to the standard
-// OpenTelemetry API accepted by telemetry.
+// Package retrytelemetry adapts bounded retry observations to OpenTelemetry
+// metrics. Start with NewStrict to reject
+// typed-nil providers while retaining the legacy instrumentation scope.
+// Providers/instruments are borrowed, calls synchronous, and nil/zero observers
+// retain panic behavior. The package owns no exporter or shutdown lifecycle.
 //
 // Deprecated: use github.com/faustbrian/go-retry/v2/adapters/otel. This package
 // remains supported through the documented compatibility interval.
@@ -23,11 +26,18 @@ const MaxPolicyIDLength = 128
 
 // Options configures retry metric instruments.
 type Options struct {
+	// MeterProvider is required and borrowed; the caller owns readers, exporters
+	// and shutdown after all observer calls finish.
 	MeterProvider metric.MeterProvider
-	PolicyID      string
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Use a stable non-sensitive policy label.
+	PolicyID string
 }
 
-// Observer records attempt counts, elapsed time, and selected delays.
+// Observer counts received observations and records cumulative elapsed time and
+// selected delays per notification. retry.attempts is not a physical-dispatch
+// counter: retry execution can omit events or report early admission denial.
+// The observer borrows instruments/provider resources and owns no shutdown.
 type Observer struct {
 	policyID string
 	attempts metric.Int64Counter
@@ -35,7 +45,10 @@ type Observer struct {
 	delay    metric.Float64Histogram
 }
 
-// New constructs bounded retry metric instruments.
+// New constructs instruments synchronously under the retained legacy scope.
+// It rejects a nil interface, but a typed-nil provider can be invoked and panic;
+// use NewStrict to reject that case. Errors propagate without partial rollback.
+// No provider/reader/exporter is closed by this package.
 func New(options Options) (*Observer, error) {
 	if options.MeterProvider == nil {
 		return nil, fmt.Errorf("%w: meter provider is required", retry.ErrInvalidPolicy)
@@ -82,7 +95,10 @@ func nilMeterProvider(provider metric.MeterProvider) bool {
 	}
 }
 
-// Observe records bounded attributes and no operation values or errors.
+// Observe records bounded attributes and no operation values or errors. A nil
+// or zero observer panics, unlike the canonical observer. Calls use Background
+// and can block, overlap or reenter; direct sink panics propagate. Legacy
+// mapping renders ReasonOutcomeUnknown as unknown rather than outcome_unknown.
 func (observer *Observer) Observe(observation retry.Observation) {
 	attributes := metric.WithAttributes(
 		attribute.String("retry.policy.id", observer.policyID),

@@ -33,28 +33,46 @@ const (
 	ReasonWorkBudget Reason = "work_budget"
 )
 
-// Attempt records bounded failure metadata. It never retains operation values.
+// Attempt records an unsuccessful dispatch, not a successful operation value.
+// Classified failures retain the original error object; strict unknown/invalid
+// outcomes retain no error and have zero Classification and Delay.
 type Attempt struct {
-	Attempt        uint
-	Elapsed        time.Duration
-	Delay          time.Duration
+	// Attempt is the one-based physical callback count.
+	Attempt uint
+	// Elapsed is nonnegative clock-sampled time since execution began.
+	Elapsed time.Duration
+	// Delay is the selected next pause, even if a budget rejects it before sleep.
+	Delay time.Duration
+	// Classification is the accepted result, or zero for unclassified strict outcomes.
 	Classification Classification
-	Err            error
+	// Err retains a classified operation error, or nil for unclassified strict outcomes.
+	// Retained errors are not copied or safe log text.
+	Err error
 }
 
-// Result contains bounded execution metadata and never retains operation
-// values.
+// Result contains retry metadata rather than the returned T. Retained errors
+// may reference arbitrary caller data; history is not a byte or privacy bound.
 type Result struct {
-	Attempts   uint
-	Elapsed    time.Duration
+	// Attempts counts dispatched callbacks, including success or ambiguous results.
+	Attempts uint
+	// Elapsed includes observed collaborator time using the injected Clock.
+	Elapsed time.Duration
+	// FinalDelay is the last selected delay, not proof that it was slept.
 	FinalDelay time.Duration
-	Reason     Reason
-	History    []Attempt
+	// Reason is the terminal category, not a replay-safety decision.
+	Reason Reason
+	// History is the most recent recorded failures, bounded by count.
+	// Legacy Do can share this slice with its terminal error metadata; do not
+	// mutate it if that metadata must remain stable. Error objects remain borrowed.
+	History []Attempt
 }
 
 // DelayHint is implemented by classified errors that carry a server-provided
-// minimum retry delay, such as HTTP Retry-After.
+// minimum retry delay, such as HTTP Retry-After. Hints are advisory: MinDelay
+// and MaxDelay still apply. A positive hint can be shortened by MaxDelay.
 type DelayHint interface {
+	// RetryDelay reports an available delay at the supplied clock time. Calls
+	// are synchronous without context, timeout or panic recovery.
 	RetryDelay(time.Time) (time.Duration, bool)
 }
 
@@ -63,28 +81,50 @@ func (result Result) clone() Result {
 	return result
 }
 
-// Observer receives bounded lifecycle metadata.
+// Observer receives scalar lifecycle metadata synchronously. Calls may overlap
+// or reenter execution; no package lock is held. Engine calls contain panics,
+// but direct calls propagate them. Blocking observers block the retry caller.
+// Notifications are not a complete audit of all attempt or terminal paths.
 type Observer interface {
+	// Observe consumes a copied notification with no operation value or error.
 	Observe(Observation)
 }
 
-// Observation is a bounded notification for one completed attempt.
+// Observation describes a reached notification site; it is not proof of a
+// physical dispatch. Early work-budget refusal can report attempt zero, and
+// several cancellation, budget and collaborator-failure paths emit no event.
 type Observation struct {
-	Attempt        uint
-	Elapsed        time.Duration
-	NextDelay      time.Duration
+	// Attempt is the completed callback ordinal, or zero before first dispatch.
+	Attempt uint
+	// Elapsed is the sampled elapsed time at this notification.
+	Elapsed time.Duration
+	// NextDelay is a selected pause, not a completed sleep.
+	NextDelay time.Duration
+	// Classification is zero when no failure was classified.
 	Classification Classification
-	Reason         Reason
+	// Reason is empty for a selected retry pause and populated for terminal events.
+	Reason Reason
 }
 
-// ObserveFunc adapts a function to Observer.
+// ObserveFunc borrows a callback as Observer. A nil function panics on direct
+// invocation; policy construction treats it as an absent optional collaborator.
 type ObserveFunc func(Observation)
 
 // Observe invokes the adapted function.
 func (function ObserveFunc) Observe(observation Observation) { function(observation) }
 
 // Do executes operation under policy. The caller remains solely responsible
-// for deciding whether repeating operation is safe.
+// for deciding whether repeating operation is safe. ctx must be non-nil;
+// nil policy/operation returns ErrInvalidPolicy. Use a constructed policy.
+// Calls are synchronous without operation-panic recovery. The caller context
+// wins after an operation returns, including when that callback succeeded;
+// failure paths return the zero T and may retain classified errors in history.
+// Its returned History can alias stored terminal metadata; error Result accessors
+// copy their current slice, not the referenced error objects.
+// Attempt deadlines require callback cooperation and do not veto a nil error
+// from an otherwise successful operation. DoStrict differs for known outcomes.
+// Acquired work permits and attempt contexts are released on normal/error/panic
+// exits; side effects are not rolled back and permit completion errors ignored.
 func Do[T any](ctx context.Context, policy *Policy, operation func(context.Context) (T, error)) (T, Result, error) {
 	var zero T
 	if policy == nil || operation == nil {
@@ -119,9 +159,13 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		}
 
 		attemptCtx, cancel, attemptBudget := policy.attemptContext(workCtx, start)
+		// Transfer completion ownership only when entering the operation. The
+		// outer defer owns an acquired permit while dispatch is still pending.
 		dispatchPermit := undispatchedPermit
 		undispatchedPermit = nil
 		value, operationErr, attemptErr := func() (T, error, error) {
+			// Keep cancel outside invokeOperation so permit-completion panic also
+			// unwinds through attempt-context cleanup.
 			defer cancel()
 			value, err := invokeOperation(attemptCtx, operation, dispatchPermit)
 			return value, err, attemptCtx.Err()
@@ -230,6 +274,8 @@ func finish(policy *Policy, start time.Time, result Result, reason Reason) Resul
 	return result
 }
 
+// appendHistory keeps only the latest entries. Error references are retained,
+// not deep-copied, so entry count is not a byte or disclosure budget.
 func appendHistory(policy *Policy, result Result, attempt Attempt) Result {
 	limit := policy.config.HistoryLimit
 	if limit == 0 {

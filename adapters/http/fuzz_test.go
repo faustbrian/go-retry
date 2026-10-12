@@ -11,6 +11,8 @@ import (
 	legacy "github.com/faustbrian/go-retry/v2/retryhttp" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 )
 
+// FuzzParseRetryAfterNeverReturnsNegativeDelay checks canonical/flat parity and
+// nonnegative accepted hints at arbitrary representable Unix nanosecond times.
 func FuzzParseRetryAfterNeverReturnsNegativeDelay(f *testing.F) {
 	f.Add("120", int64(0))
 	f.Add("Sun, 19 Jul 2026 12:02:00 GMT", int64(1_000_000_000))
@@ -29,6 +31,8 @@ func FuzzParseRetryAfterNeverReturnsNegativeDelay(f *testing.F) {
 	})
 }
 
+// FuzzNewErrorBoundsResponseMetadata checks exact status/raw-header admission
+// bounds, typed refusal and preserved machine-cause identity, not HTTP replay safety.
 func FuzzNewErrorBoundsResponseMetadata(f *testing.F) {
 	f.Add(503, "120")
 	f.Add(99, "")

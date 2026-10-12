@@ -1,5 +1,7 @@
-// Package retrylog adapts bounded retry observations to log/slog, the logging
-// API used by log. It never records operation errors or values.
+// Package retrylog adapts bounded retry observations to log/slog.
+// It never records operation errors or values. Start with New;
+// handlers are borrowed and direct calls are synchronous. Nil/zero observers
+// retain panic behavior, unlike the canonical adapter; no logger is closed.
 //
 // Deprecated: use github.com/faustbrian/go-retry/v2/adapters/slog. This package
 // remains supported through the documented compatibility interval.
@@ -18,8 +20,12 @@ const MaxPolicyIDLength = 128
 
 // Options configures structured retry observation logging.
 type Options struct {
-	Logger   *slog.Logger
-	Level    slog.Level
+	// Logger is required and borrowed; its handler lifetime remains caller-owned.
+	Logger *slog.Logger
+	// Level selects the slog level; zero is the standard info level.
+	Level slog.Level
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Supply a stable non-sensitive policy label, not request payloads.
 	PolicyID string
 }
 
@@ -41,7 +47,10 @@ func New(options Options) (*Observer, error) {
 	return &Observer{logger: options.Logger, level: options.Level, policyID: options.PolicyID}, nil
 }
 
-// Observe records one event without error messages or operation values.
+// Observe records one event without error messages or operation values. Nil
+// and zero observers panic, unlike the canonical observer. Calls use Background
+// and may block, overlap or reenter; direct handler panics propagate. Legacy
+// mapping renders ReasonOutcomeUnknown as unknown rather than outcome_unknown.
 func (observer *Observer) Observe(observation retry.Observation) {
 	observer.logger.LogAttrs(
 		context.Background(), observer.level, "retry observation",

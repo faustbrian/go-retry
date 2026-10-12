@@ -20,7 +20,11 @@ type Classifier struct{}
 func New() Classifier { return Classifier{} }
 
 // Classify implements retry.Classifier. Caller cancellation and deadline
-// always take precedence over otherwise transient backend failures.
+// always take precedence over otherwise transient backend failures. Nil/typed-
+// nil contexts are rejected. With an active context, a PgError takes priority
+// over context sentinels wrapped in the failure; otherwise returned context
+// errors precede connection/EOF/network evidence. Traversal is synchronous and
+// custom error graphs may block or panic; no database operation is performed.
 func (Classifier) Classify(ctx context.Context, err error) (retry.Classification, error) {
 	if nilContext(ctx) {
 		return 0, fmt.Errorf("%w: context is required", retry.ErrInvalidPolicy)

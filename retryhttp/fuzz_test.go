@@ -7,6 +7,8 @@ import (
 	"github.com/faustbrian/go-retry/v2/retryhttp"
 )
 
+// FuzzParseRetryAfterNeverReturnsNegativeDelay protects nonnegative accepted
+// hints through the retained flat parser; it is not a server conformance oracle.
 func FuzzParseRetryAfterNeverReturnsNegativeDelay(fuzz *testing.F) {
 	fuzz.Add("120", int64(0))
 	fuzz.Add("Sun, 19 Jul 2026 12:02:00 GMT", time.Now().UnixNano())

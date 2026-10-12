@@ -17,11 +17,18 @@ const MaxPolicyIDLength = 128
 
 // Options configures retry metric instruments.
 type Options struct {
+	// MeterProvider is required and borrowed; the caller owns readers, exporters
+	// and shutdown after all observer calls finish.
 	MeterProvider metric.MeterProvider
-	PolicyID      string
+	// PolicyID is optional and byte-bounded, not sanitized or cardinality-limited.
+	// Use a stable non-sensitive policy label.
+	PolicyID string
 }
 
-// Observer records attempt counts, elapsed time, and selected delays.
+// Observer counts received observations and records cumulative elapsed time and
+// selected delays per notification. retry.attempts is not a physical-dispatch
+// counter: retry execution can omit events or report early admission denial.
+// The observer borrows instruments/provider resources and owns no shutdown.
 type Observer struct {
 	policyID string
 	attempts metric.Int64Counter
@@ -29,7 +36,11 @@ type Observer struct {
 	delay    metric.Float64Histogram
 }
 
-// New validates options and constructs bounded retry metric instruments.
+// New rejects nil/typed-nil providers and oversized policy labels, then invokes
+// provider/instrument constructors synchronously. Their errors are returned
+// unchanged; prior instrument creation is not transactionally rolled back.
+// Constructor panics/blocking propagate; concurrent/reentrant calls require
+// a provider supporting those calls. No global provider is selected.
 func New(options Options) (*Observer, error) {
 	if nilMeterProvider(options.MeterProvider) {
 		return nil, fmt.Errorf("%w: meter provider is required", retry.ErrInvalidPolicy)
@@ -54,7 +65,9 @@ func New(options Options) (*Observer, error) {
 }
 
 // Observe records bounded attributes synchronously. A nil or zero observer is
-// a no-op.
+// a no-op. Calls use Background, not an execution deadline, and may overlap
+// or reenter. Blocking instruments block the direct caller and panics propagate;
+// execution contains observer panics. Provider lifetime remains caller-owned.
 func (observer *Observer) Observe(observation retry.Observation) {
 	if observer == nil || observer.attempts == nil || observer.elapsed == nil || observer.delay == nil {
 		return

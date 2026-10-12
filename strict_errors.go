@@ -9,7 +9,8 @@ import (
 // outcome cannot be proved. It never implies that replay is safe.
 var ErrOutcomeUnknown = errors.New("retry outcome unknown")
 
-// MaxStrictTerminalErrorBytes bounds every human-readable DoStrict error.
+// MaxStrictTerminalErrorBytes bounds human-readable errors returned by DoStrict,
+// not panic payloads, retained causes or value formatting.
 const MaxStrictTerminalErrorBytes = 66
 
 // Outcome describes whether an operation was dispatched and whether its
@@ -84,6 +85,8 @@ func (strictOutcomeError) Is(target error) bool {
 	return target == ErrOutcomeUnknown
 }
 
+// These carriers hide human-readable cause text while preserving exact machine
+// identities for errors.Is/As. They do not erase or sanitize the cause object.
 type strictSafeCause struct {
 	message string
 	cause   error

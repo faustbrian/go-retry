@@ -1,9 +1,13 @@
 # Budgets and cancellation
 
-`MaxAttempts` is mandatory and includes the first call. `MaxElapsed` bounds
-attempt work and sleeps. `AttemptTimeout` bounds each attempt. `MaxSleep`
-bounds accumulated sleep, while `MinDelay` and `MaxDelay` clamp each selected
-delay.
+`MaxAttempts` is mandatory and includes the first call. `MaxElapsed` samples
+elapsed time through Clock and supplies a remaining
+cooperative attempt deadline; it is not forced callback preemption.
+`AttemptTimeout` supplies a cooperative deadline to each operation. `MaxSleep`
+bounds accumulated successful requested delays, not measured sleeper wall time.
+Sleeper receives the caller context, not a separate elapsed-budget context.
+`MinDelay` and `MaxDelay` clamp each selected delay, including Retry-After hints;
+the maximum can shorten a server hint. Zero duration budgets disable that bound.
 
 With `DoStrict`, cancellation before dispatch returns `ContextError` with
 `OutcomeNotDispatched`; cancellation between known attempts returns

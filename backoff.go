@@ -1,5 +1,16 @@
 // Package retry executes explicitly classified operations under bounded retry
-// policies. It never decides whether an operation is safe to repeat.
+// policies. Start with a constructed Policy and DoStrict when dispatch outcome
+// matters, or Do for its compatibility cancellation rules. It never decides
+// idempotency or undoes side effects. Attempt limits are mandatory; duration
+// budgets and shared resilience admission are explicit opt-ins.
+//
+// Policies borrow collaborators and captured state. Calls are synchronous, may
+// overlap or reenter and are not forcibly preempted. Built-in strategies have
+// immutable state; consumers synchronize custom collaborators and RNGs. There
+// are no package workers or shutdown lifecycle. HTTP, PostgreSQL, logging and
+// telemetry adapters have distinct canonical and compatibility contracts; the
+// module includes their external dependencies, while the core imports resilience.
+// No retry-owned transport, database pool or telemetry exporter is created.
 package retry
 
 import (
@@ -11,6 +22,8 @@ import (
 // Random is an injected, concurrency-safe source of uniform integers in
 // [0, upper). Implementations must return zero when upper is non-positive.
 type Random interface {
+	// Int64n must return a uniform sample for positive upper. It may be called
+	// concurrently by a shared policy; it is not a cryptographic interface.
 	Int64n(upper int64) int64
 }
 
@@ -18,6 +31,9 @@ type Random interface {
 // the first retry. Previous is the previously selected delay and is used only
 // by state-dependent strategies such as decorrelated jitter.
 type Backoff interface {
+	// Delay receives the failed operation ordinal (1 before the first retry)
+	// and previous fully selected delay. It must bound its synchronous work;
+	// returned negative durations are clamped by Policy. Calls may overlap.
 	Delay(attempt uint, previous time.Duration, random Random) time.Duration
 }
 
@@ -80,7 +96,10 @@ func Exponential(initial time.Duration, multiplier uint64) Backoff {
 	})
 }
 
-// FullJitter chooses uniformly between zero and the wrapped delay.
+// FullJitter borrows backoff and chooses between zero and its nonnegative delay.
+// Nil backoff yields zero; nil randomness selects zero after the wrapped delay
+// is computed. A typed-nil implementation can still panic. Randomness must meet
+// Random's uniformity contract.
 func FullJitter(backoff Backoff) Backoff {
 	return backoffFunc(func(attempt uint, previous time.Duration, random Random) time.Duration {
 		if backoff == nil {
@@ -91,7 +110,8 @@ func FullJitter(backoff Backoff) Backoff {
 }
 
 // EqualJitter retains half of the wrapped delay and uniformly jitters the
-// remainder.
+// remainder. Nil backoff yields zero; nil randomness selects the lower bound.
+// The wrapped implementation and random source are borrowed.
 func EqualJitter(backoff Backoff) Backoff {
 	return backoffFunc(func(attempt uint, previous time.Duration, random Random) time.Duration {
 		if backoff == nil {
@@ -103,7 +123,8 @@ func EqualJitter(backoff Backoff) Backoff {
 }
 
 // ExponentialJitter applies centered proportional jitter to exponential
-// backoff. Factor is clamped to [0, 1].
+// backoff. Finite Factor is clamped to [0, 1]; NaN is not validated and
+// has no promised jitter range.
 func ExponentialJitter(initial time.Duration, multiplier uint64, factor float64) Backoff {
 	factor = min(max(factor, 0), 1)
 	exponential := Exponential(initial, multiplier)
@@ -173,6 +194,9 @@ func saturatingUintMultiply(left, right uint64) uint64 {
 	return low
 }
 
+// randomDuration normally samples inclusive integer-nanosecond endpoints. A
+// full MaxInt64 span excludes the upper endpoint to keep Int64n upper positive.
+// Normalize faulty RNG offsets defensively; this does not restore uniformity.
 func randomDuration(minimum, maximum time.Duration, random Random) time.Duration {
 	if random == nil {
 		return minimum

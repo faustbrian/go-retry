@@ -3,7 +3,9 @@ package retry
 import "fmt"
 
 // NewPolicyStrict validates and copies config while rejecting explicitly
-// supplied typed-nil optional collaborators.
+// supplied typed-nil optional collaborators. Plain nil Random/Observer remain
+// absent; all scalar validation and borrowed ownership match NewPolicy.
+// This constructor does not choose DoStrict automatically.
 func NewPolicyStrict(config Config) (*Policy, error) {
 	return newPolicy(config, true)
 }

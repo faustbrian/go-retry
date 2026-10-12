@@ -4,7 +4,10 @@ Observers receive attempt number, elapsed time, selected next delay,
 classification, and terminal reason. They never receive operation values or
 error messages. Calling an observer directly propagates sink panics. `Do` and
 `DoStrict` isolate observer panics so observation cannot replace an execution
-result.
+result. Blocking still blocks execution; neither variant forcibly interrupts
+a callback or contains runtime.Goexit. Events are not emitted at every terminal
+path, and early work admission failure can report attempt zero. retry.attempts
+increments once per notification, not once per guaranteed physical dispatch.
 
 `adapters/slog` writes bounded slog fields. `adapters/otel` records count,
 elapsed, and delay instruments through a caller-owned OpenTelemetry

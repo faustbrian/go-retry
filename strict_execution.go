@@ -13,24 +13,42 @@ const ReasonOutcomeUnknown Reason = "outcome_unknown"
 
 // AttemptResult declares the value and side-effect outcome of one attempt.
 type AttemptResult[T any] struct {
-	Value   T
+	// Value is returned to the caller only with OutcomeKnown and nil error.
+	Value T
+	// Outcome must be OutcomeKnown, or OutcomeUnknown with a non-nil error.
+	// OutcomeNotDispatched is invalid after invocation; errors alone do not
+	// establish the dispatch outcome.
 	Outcome Outcome
 }
 
 // StrictResult contains a value only for known success, bounded retry
 // metadata, and the operation dispatch outcome.
 type StrictResult[T any] struct {
-	Value   T
-	Retry   Result
+	// Value is set only for known success and otherwise is the zero T.
+	Value T
+	// Retry contains bounded metadata; retained error objects may be private.
+	Retry Result
+	// Outcome identifies dispatch knowledge, never permission to repeat side effects.
 	Outcome Outcome
 }
 
 // StrictOperation executes one attempt and declares whether its outcome is
-// known. It must never label an ambiguous side effect as known.
+// known. It must never label an ambiguous side effect as known or return
+// OutcomeNotDispatched after invocation. Captured state is borrowed; calls
+// execute synchronously and operation panics propagate, with owned cleanup.
 type StrictOperation[T any] func(context.Context) (AttemptResult[T], error)
 
 // DoStrict executes operation under policy without retrying an unknown outcome
-// and returns only bounded human-readable terminal errors.
+// and returns only bounded human-readable terminal errors. Nil/typed-nil ctx,
+// nil policy or operation returns ErrInvalidPolicy. Use a constructed policy.
+// Known success wins caller/attempt deadline races. Known failures retain
+// timeout and classification precedence before later caller-cancellation checks.
+// Unknown or invalid outcomes
+// terminate without classification, delay selection or retry.
+// Human text is safe by category, not arbitrary cause/history traversal.
+// Collaborators may block or overlap; deadlines are cooperative. Acquired
+// permits and attempt contexts are released, not side effects rolled back.
+// Permit completion errors are ignored and completion/operation panics propagate.
 func DoStrict[T any](ctx context.Context, policy *Policy, operation StrictOperation[T]) (StrictResult[T], error) {
 	if nilLike(ctx) || policy == nil || operation == nil {
 		return StrictResult[T]{}, fmt.Errorf("%w: context, policy, and operation are required", ErrInvalidPolicy)
@@ -84,6 +102,8 @@ func DoStrict[T any](ctx context.Context, policy *Policy, operation StrictOperat
 		}
 
 		attemptCtx, cancel, attemptBudget := policy.attemptContext(workCtx, start)
+		// Until invocation, the outer defer owns completion. After transfer,
+		// invokeStrictOperation completes the permit even during panic unwinding.
 		dispatchPermit := undispatchedPermit
 		undispatchedPermit = nil
 		attemptResult, operationErr, attemptErr := func() (AttemptResult[T], error, error) {
@@ -218,6 +238,8 @@ func invokeStrictOperation[T any](ctx context.Context, operation StrictOperation
 	return operation(ctx)
 }
 
+// Once a callback was invoked, NotDispatched cannot be its result. Unknown
+// without failure cannot explain why success is unavailable.
 func invalidStrictOutcome(outcome Outcome, err error) bool {
 	return outcome == OutcomeNotDispatched || (outcome == OutcomeUnknown && err == nil) || outcome > OutcomeUnknown
 }

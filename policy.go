@@ -17,20 +17,30 @@ var ErrInvalidPolicy = errors.New("invalid retry policy")
 // MaxHistoryEntries is the largest failure history retained by a policy.
 const MaxHistoryEntries = 1024
 
-// Clock supplies policy time. Implementations may additionally implement
-// TimeoutClock to make per-attempt timeouts deterministic.
+// Clock supplies policy time for elapsed accounting. Implementations must be
+// safe for concurrent calls when the policy is shared and should provide a
+// consistent time progression. Backward elapsed differences are clamped to zero.
+// Implement TimeoutClock as well to control per-attempt deadlines.
 type Clock interface {
+	// Now returns the time used for budgets, history and delay hints.
 	Now() time.Time
 }
 
-// TimeoutClock derives deadline contexts using an injected clock.
+// TimeoutClock derives cooperative deadline contexts using an injected clock.
+// Calls are synchronous and may overlap; preserve caller values/cancellation.
 type TimeoutClock interface {
 	Clock
+	// WithTimeout returns a usable non-nil child context and cancellation function.
+	// The executor cancels it at the end of the attempt, including panic unwinding.
 	WithTimeout(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
 
-// Sleeper waits without owning policy or retry decisions.
+// Sleeper waits synchronously without owning retry decisions. It must honor
+// caller cancellation, bound its work and synchronize state for shared policies.
+// The executor does not measure actual sleep or forcibly interrupt a call.
 type Sleeper interface {
+	// Sleep receives a nonnegative selected delay. Nil reports completion and
+	// charges that requested duration to MaxSleep; an error stops execution.
 	Sleep(context.Context, time.Duration) error
 }
 
@@ -45,12 +55,19 @@ const (
 )
 
 // Classifier classifies an operation failure. Returning an error means the
-// classifier itself failed and execution stops.
+// classifier itself failed and execution stops. It must be bounded and safe
+// for overlapping calls when shared. Classification never establishes replay
+// safety; error traversal and retained causes remain caller trust boundaries.
 type Classifier interface {
+	// Classify receives the caller context and exact operation error. Return
+	// ClassificationPermanent or ClassificationRetryable; other results stop
+	// execution as classifier failures.
 	Classify(context.Context, error) (Classification, error)
 }
 
-// ClassifyFunc adapts a function to Classifier.
+// ClassifyFunc borrows a function as Classifier. Direct calls propagate panics;
+// Do and DoStrict contain classifier panics with distinct terminal errors.
+// A nil function is rejected as a required policy collaborator.
 type ClassifyFunc func(context.Context, error) (Classification, error)
 
 // Classify invokes the adapted function.
@@ -61,25 +78,48 @@ func (function ClassifyFunc) Classify(ctx context.Context, err error) (Classific
 // Config contains all dependencies and bounds for a Policy. MaxAttempts is
 // mandatory so no policy can retry forever.
 type Config struct {
-	Backoff        Backoff
-	MaxAttempts    uint
-	MaxElapsed     time.Duration
+	// Backoff is required; its implementation is borrowed and called synchronously.
+	Backoff Backoff
+	// MaxAttempts is required and includes the original call; one means no retries.
+	MaxAttempts uint
+	// MaxElapsed is a sampled elapsed budget; zero disables it. Attempt contexts
+	// use the remaining budget, but collaborators and sleeps are not forcibly preempted.
+	MaxElapsed time.Duration
+	// AttemptTimeout adds a cooperative deadline per operation; zero disables it
+	// unless MaxElapsed supplies a remaining deadline.
 	AttemptTimeout time.Duration
-	MinDelay       time.Duration
-	MaxDelay       time.Duration
-	MaxSleep       time.Duration
-	Clock          Clock
-	Sleeper        Sleeper
-	Random         Random
-	Classifier     Classifier
-	Observer       Observer
-	HistoryLimit   uint
+	// MinDelay floors selected retry delays, including available server hints.
+	MinDelay time.Duration
+	// MaxDelay caps selected delays and hints; zero disables the cap.
+	MaxDelay time.Duration
+	// MaxSleep caps accumulated successful sleep requests; zero disables it.
+	// It does not measure actual sleeper wall time.
+	MaxSleep time.Duration
+	// Clock is required and borrowed for elapsed accounting and optional deadlines.
+	Clock Clock
+	// Sleeper is required and borrowed; it receives the caller context, not
+	// an attempt or MaxElapsed-derived context.
+	Sleeper Sleeper
+	// Random is optional and borrowed; nil selects deterministic jitter lower bounds.
+	Random Random
+	// Classifier is required and receives the original failure and caller context,
+	// not the attempt context.
+	Classifier Classifier
+	// Observer is optional, synchronous and borrowed. Engine calls contain panics,
+	// not blocking or arbitrary side effects.
+	Observer Observer
+	// HistoryLimit retains the most recent recorded failures up to MaxHistoryEntries.
+	// Zero disables history; error objects are borrowed and not byte-bounded.
+	HistoryLimit uint
 	// UseResilienceBudget consumes the shared work-amplification scope attached
 	// to the execution context. Existing standalone behavior is unchanged when false.
 	UseResilienceBudget bool
 }
 
-// Policy is an immutable, explicitly bounded retry policy.
+// Policy copies configuration but borrows collaborators and captured state.
+// Construct it with NewPolicy or NewPolicyStrict; the zero Policy is unusable.
+// Concurrent executions are safe only when all shared collaborators are safe;
+// retry owns no worker, shutdown lifecycle, callback lock or forced preemption.
 type Policy struct {
 	config Config
 }
@@ -130,7 +170,10 @@ func (policy *Policy) retryWorkContext(ctx context.Context, parent workAttempt) 
 	return attached, workAttempt{ordinal: attempt.Ordinal}, permit, err
 }
 
-// NewPolicy validates and copies config.
+// NewPolicy validates finite attempt count, required dependencies and consistent
+// nonnegative duration/history limits. Scalars are copied; dependencies are
+// borrowed. Typed-nil optional Random/Observer values normalize to absent.
+// It returns nil with an ErrInvalidPolicy-wrapping error on invalid config.
 func NewPolicy(config Config) (*Policy, error) {
 	return newPolicy(config, false)
 }
@@ -161,6 +204,8 @@ func (policy *Policy) boundDelay(delay time.Duration) time.Duration {
 	return delay
 }
 
+// attemptContext chooses the tighter cooperative timeout; equal deadlines
+// attribute exhaustion to MaxElapsed. Custom clocks own deadline mechanics.
 func (policy *Policy) attemptContext(parent context.Context, start time.Time) (context.Context, context.CancelFunc, BudgetKind) {
 	timeout := policy.config.AttemptTimeout
 	kind := BudgetAttempt

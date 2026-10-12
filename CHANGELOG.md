@@ -4,6 +4,13 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Documentation
+
+- Clarify cooperative retry budgets, borrowed collaborator and permit ownership,
+  strict versus legacy outcomes, retained cause privacy, and canonical versus
+  compatibility adapter readiness. Document that observation counts are not a
+  complete physical-dispatch audit; execution and persisted identities are unchanged.
+
 ## [2.1.1] - 2026-10-06
 
 ### Changed

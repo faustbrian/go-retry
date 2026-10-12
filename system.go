@@ -11,7 +11,7 @@ import (
 // mutable state.
 type SystemClock struct{}
 
-// Now returns the current time.
+// Now returns time.Now; SystemClock's zero value is ready and concurrent-safe.
 func (SystemClock) Now() time.Time { return time.Now() }
 
 // WithTimeout derives a standard context timeout.
@@ -22,7 +22,9 @@ func (SystemClock) WithTimeout(parent context.Context, timeout time.Duration) (c
 // SystemSleeper waits with a context-owned timer and always stops the timer.
 type SystemSleeper struct{}
 
-// Sleep waits for delay or context cancellation.
+// Sleep waits for delay or cancellation; ctx must be non-nil. Zero/negative
+// delays use an immediately ready timer. If timer and cancellation are both
+// ready, either select branch may win. No timer or background worker is retained.
 func (SystemSleeper) Sleep(ctx context.Context, delay time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -37,7 +39,10 @@ func (SystemSleeper) Sleep(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-// SeededRandom is a deterministic, concurrency-safe PCG random source.
+// SeededRandom serializes a deterministic PCG stream. Construct it with
+// NewRandom; the zero value cannot serve positive bounds. Sharing is race-safe
+// but scheduling assigns samples to callers, so per-call sequences can differ.
+// It is not a cryptographic source.
 type SeededRandom struct {
 	mu     sync.Mutex
 	random *rand.Rand

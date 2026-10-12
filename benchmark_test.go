@@ -9,6 +9,10 @@ import (
 	retry "github.com/faustbrian/go-retry/v2"
 )
 
+// BenchmarkSuccessfulExecution compares a single successful callback, not full
+// retry/composition semantics. The retry policy is outside the timed sub-benchmark;
+// strict-policy construction is in its sub-benchmark setup, not each iteration.
+// Peer APIs perform their own per-call setup, so these are not equal-work claims.
 func BenchmarkSuccessfulExecution(b *testing.B) {
 	policy, err := retry.NewPolicy(retry.Config{
 		Backoff: retry.Constant(0), MaxAttempts: 1,
@@ -55,6 +59,8 @@ func BenchmarkSuccessfulExecution(b *testing.B) {
 	})
 }
 
+// BenchmarkBackoffStrategies measures strategy calls over rotating ordinals 1..32
+// and fixed previous delay, with seeded RNG creation outside the iteration loop.
 func BenchmarkBackoffStrategies(b *testing.B) {
 	strategies := map[string]retry.Backoff{
 		"constant": retry.Constant(100), "linear": retry.Linear(100, 100),
