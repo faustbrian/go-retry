@@ -1,5 +1,8 @@
 # Idempotency and ownership
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 Classification answers whether a failure appears transient. It does not answer
 whether repeating an operation is safe. Before enabling retries, identify:
 

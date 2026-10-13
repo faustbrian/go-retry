@@ -1,10 +1,7 @@
 # retry
 
 [![CI](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml)
-[![CodeQL](https://img.shields.io/badge/CodeQL-required-blue)](https://github.com/faustbrian/go-retry/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-100%25_required-blue)](CONTRIBUTING.md#verification)
-[![Mutation](https://img.shields.io/badge/mutation-local_or_scheduled-blue)](CONTRIBUTING.md#verification)
-[![Documentation](https://img.shields.io/badge/docs-checked_in_CI-blue)](docs/)
+[![Documentation](https://img.shields.io/badge/docs-adoption_and_API-blue)](docs/index.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/faustbrian/go-retry/v2.svg)](https://pkg.go.dev/github.com/faustbrian/go-retry/v2)
 [![Release](https://img.shields.io/github/v/release/faustbrian/go-retry?sort=semver)](https://github.com/faustbrian/go-retry/releases)
 [![Go](https://img.shields.io/badge/go-1.27.0-00ADD8?logo=go)](https://go.dev/)
@@ -15,8 +12,8 @@ backoff. Every policy requires a finite attempt limit, an error classifier,
 timing dependencies, a backoff strategy, and an operation. The package never
 assumes the operation is idempotent or safe to repeat.
 
-v2.0.0 uses the `/v2` module path and requires Go 1.27.0. Adopt it only after
-its public tag and module are available; published v1.1.0 remains available
+The published v2 line uses the `/v2` module path and requires Go 1.27.0.
+Published v1.1.0 remains available
 with its historical Go 1.26.6 and diagnostic contracts. See the
 [major-version migration](docs/migration.md) before adopting v2.
 
@@ -49,6 +46,16 @@ The caller must decide whether `readOnce` is safe to repeat. If dispatch occurs
 but the result cannot be proved, return `OutcomeUnknown`; `DoStrict` stops
 without retrying and callers must reconcile the side effect. Marking an error
 retryable classifies a known failure; it does not make a side effect idempotent.
+
+## Adoption entry points
+
+The root module is `github.com/faustbrian/go-retry/v2` (stable).
+It requires Go 1.27.0. Pin the published `v2.1.1` root tag
+with `go get github.com/faustbrian/go-retry/v2@v2.1.1`.
+Root subpackages share this module; they need no separate installation.
+
+Start with the [documentation map](docs/index.md) for package selection,
+examples, operational constraints, and contributor references.
 
 ## Features
 
@@ -102,8 +109,8 @@ replay decision. Do not use it to infer idempotency, hide driver retries, or
 apply one implicit resilience stack across unrelated operations.
 
 For ecosystem-wide selection and ownership guidance, see the versioned
-[Golib ecosystem index](https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/README.md)
-and its [Resilience family](https://github.com/faustbrian/go-library-tools/blob/v1.4.0/docs/ecosystem/design-language.md#package-families-and-selection).
+[Golib ecosystem index](https://github.com/faustbrian/go-library-tools/blob/v1.8.4/docs/ecosystem/README.md)
+and its [Resilience family](https://github.com/faustbrian/go-library-tools/blob/v1.8.4/docs/ecosystem/design-language.md#package-families-and-selection).
 
 ## Boundaries
 

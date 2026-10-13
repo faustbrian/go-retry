@@ -1,5 +1,8 @@
 # Migration
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: HTTP and PostgreSQL adapters](adapters.md)
+
 ## v1 to the v2 module
 
 v2 requires Go 1.27.0 and imports `github.com/faustbrian/go-retry/v2`.

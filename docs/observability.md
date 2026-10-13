@@ -1,5 +1,8 @@
 # Observability
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 Observers receive attempt number, elapsed time, selected next delay,
 classification, and terminal reason. They never receive operation values or
 error messages. Calling an observer directly propagates sink panics. `Do` and

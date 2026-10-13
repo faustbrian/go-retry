@@ -1,5 +1,8 @@
 # HTTP and PostgreSQL adapters
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 `adapters/http` recognizes 408, 425, 429, 500, 502, 503, and 504 by default.
 `New` rejects invalid or duplicate status configuration and copies the caller
 slice. `NewError` retains only validated status, at most 128 bytes of the first

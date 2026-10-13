@@ -1,5 +1,8 @@
 # Budgets and cancellation
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 `MaxAttempts` is mandatory and includes the first call. `MaxElapsed` samples
 elapsed time through Clock and supplies a remaining
 cooperative attempt deadline; it is not forced callback preemption.

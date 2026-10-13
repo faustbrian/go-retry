@@ -1,5 +1,8 @@
 # Verification
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 Ordinary development starts with `go test ./...` or a focused test selector.
 `make check` and `make ci` use the public verifier declared in `.golib.yaml`
 for bounded local checks, including one named race selection for legacy/strict

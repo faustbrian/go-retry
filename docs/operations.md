@@ -1,5 +1,8 @@
 # Operations
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: FAQ](faq.md)
+
 Use full or decorrelated jitter during broad outages. Set maximum delay below
 the caller deadline and reserve time for cleanup. Keep history small; it retains
 error causes for diagnosis. Treat exhaustion spikes as dependency or capacity

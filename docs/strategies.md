@@ -1,5 +1,8 @@
 # Strategy selection
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 All attempts are one-based: attempt `1` is the delay before the first retry.
 Arithmetic saturates at the largest `time.Duration` and policy delay bounds
 are applied after strategy calculation.

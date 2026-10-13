@@ -1,5 +1,8 @@
 # Source documentation audit
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 ## Scope and reproducibility
 
 Tier A source-only pass from `0ffcc910712079149eba2b4caeb7ad26bc522bd5`.

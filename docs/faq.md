@@ -1,5 +1,8 @@
 # FAQ
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 ## Why is `MaxAttempts` mandatory?
 
 It makes infinite retry unrepresentable. Attempts include the first call.

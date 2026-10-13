@@ -1,5 +1,8 @@
 # Security model: v2 API family
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 This model applies to the root module `github.com/faustbrian/go-retry/v2` and its
 nine adapter packages. The v2.0.0 release requires Go 1.27.0, repairs
 `Do` resource cleanup, and makes default diagnostics and flat HTTP admission

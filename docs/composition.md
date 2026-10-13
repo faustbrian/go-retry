@@ -1,5 +1,8 @@
 # Composition
 
+[Documentation map](index.md) · [Repository README](../README.md)
+[Next: Operations](operations.md)
+
 The ecosystem does not freeze one resilience policy order in Phase 3. A stack
 may place retry inside a circuit breaker so each attempt is visible to circuit
 state and outside a rate limiter so each attempt consumes a permit, but other
