@@ -93,3 +93,21 @@ func TestParseRetryAfterWithOptionsKeepsRawBoundsAndDefaultContract(t *testing.T
 		t.Fatal("delta larger than configured ceiling accepted")
 	}
 }
+
+func TestParseRetryAfterWithOptionsSaturatesAtDurationBoundary(t *testing.T) {
+	options := retryhttp.RetryAfterOptions{MaxDeltaSeconds: math.MaxUint64}
+	for _, test := range []struct {
+		value string
+		want  time.Duration
+	}{
+		{"9223372035", 9_223_372_035 * time.Second},
+		{"9223372036", 9_223_372_036 * time.Second},
+		{"9223372037", time.Duration(math.MaxInt64)},
+		{"18446744073709551615", time.Duration(math.MaxInt64)},
+	} {
+		got, ok := retryhttp.ParseRetryAfterWithOptions(test.value, time.Unix(0, 0), options)
+		if !ok || got != test.want {
+			t.Errorf("parse %s = (%v,%t), want %v", test.value, got, ok, test.want)
+		}
+	}
+}

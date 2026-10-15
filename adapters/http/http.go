@@ -207,7 +207,7 @@ func parseSeconds(value string, maximum uint64) (time.Duration, bool) {
 	if maximum > 0 && (err != nil || seconds > maximum) {
 		return 0, false
 	}
-	maximumSeconds := uint64(math.MaxInt64 / int64(time.Second))
+	const maximumSeconds = uint64(math.MaxInt64 / int64(time.Second))
 	if err != nil || seconds > maximumSeconds {
 		return time.Duration(math.MaxInt64), true
 	}
