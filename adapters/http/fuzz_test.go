@@ -3,6 +3,8 @@ package retryhttp_test
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +20,8 @@ func FuzzParseRetryAfterNeverReturnsNegativeDelay(f *testing.F) {
 	f.Add("Sun, 19 Jul 2026 12:02:00 GMT", int64(1_000_000_000))
 	f.Add("999999999999999999999999999999", int64(-1))
 	f.Add("-1", int64(1))
+	f.Add(strings.Repeat("0", 128)+"5", int64(0))
+	f.Add(strings.Repeat(" ", 128)+"5", int64(0))
 	f.Fuzz(func(t *testing.T, value string, unixNano int64) {
 		now := time.Unix(0, unixNano)
 		delay, ok := retryhttp.ParseRetryAfter(value, now)
@@ -27,6 +31,19 @@ func FuzzParseRetryAfterNeverReturnsNegativeDelay(f *testing.F) {
 		}
 		if ok && delay < 0 {
 			t.Fatalf("negative accepted delay %s", delay)
+		}
+		options := retryhttp.RetryAfterOptions{MaxBytes: 1024, MaxDeltaSeconds: 2147483647}
+		bounded, boundedOK := retryhttp.ParseRetryAfterWithOptions(value, now, options)
+		if boundedOK && (bounded < 0 || len(value) > 1024) {
+			t.Fatalf("bounded parser admitted invalid input/delay: (%s,%v)", bounded, boundedOK)
+		}
+		// Native unsigned parsing is an independent oracle for the configured
+		// legacy numeric domain, not for HTTP dates or application delay caps.
+		if seconds, err := strconv.ParseUint(strings.TrimSpace(value), 10, 31); err == nil && len(value) <= 1024 {
+			want := time.Duration(seconds) * time.Second
+			if !boundedOK || bounded != want {
+				t.Fatalf("bounded numeric parse = (%s,%v), want %s", bounded, boundedOK, want)
+			}
 		}
 	})
 }

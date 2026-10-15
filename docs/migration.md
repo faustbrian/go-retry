@@ -34,6 +34,15 @@ type for status lookup and continues to ignore caller-context cancellation.
 Both public `ParseRetryAfter` functions reject raw strings over 128 bytes
 before trimming or parsing; the exact 128-byte boundary remains inclusive.
 
+Consumers preserving a different finite transport contract may opt into
+`adapters/http.ParseRetryAfterWithOptions`. `MaxBytes` is inclusive, applies
+before trimming and cannot exceed 1 MiB; zero retains the 128-byte default.
+`MaxDeltaSeconds` rejects larger numeric values instead of saturating them,
+without limiting HTTP dates. Zero retains saturation. Zero/past hints remain
+present-zero; positive-only metadata and total-delay caps belong to the caller.
+The parser borrows input without retaining it. This opt-in does not widen
+`NewError` admission or either existing `ParseRetryAfter` function.
+
 A classifier panic in `Do` becomes a safe classifier-failure category. The
 operation cause and an error-valued panic remain available only through
 explicit machine traversal; non-error panic values are not formatted or

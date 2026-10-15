@@ -4,6 +4,15 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-15
+
+### Added
+
+- Add opt-in Retry-After parsing limits for finite raw transport inputs and
+  numeric delta-seconds, allowing consumers to preserve legacy acceptance
+  without copying a header parser. Default parsing and retained HTTP error
+  metadata keep their 128-byte admission boundary and saturation behavior.
+
 ### Documentation
 
 - Clarify cooperative retry budgets, borrowed collaborator and permit ownership,

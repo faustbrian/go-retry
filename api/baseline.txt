@@ -551,6 +551,9 @@ const (
 	MaxRetryStatuses = 900
 	// MaxRetryAfterBytes bounds retained Retry-After metadata.
 	MaxRetryAfterBytes = 128
+	// MaxRetryAfterInputBytes is the hard ceiling for opt-in parsing of a
+	// borrowed header value. It does not widen Error's retained metadata budget.
+	MaxRetryAfterInputBytes = 1 << 20
 )
 
 VARIABLES
@@ -567,6 +570,14 @@ func ParseRetryAfter(value string, now time.Time) (time.Duration, bool)
     is byte-bounded before whitespace trimming; malformed input returns false.
     Unsigned decimal seconds and http.ParseTime date formats are accepted; this
     parser does not sleep, validate operation safety or enforce policy budgets.
+
+func ParseRetryAfterWithOptions(value string, now time.Time, options RetryAfterOptions) (time.Duration, bool)
+    ParseRetryAfterWithOptions parses a header under explicit finite input and
+    numeric limits. Invalid limits or rejected input return (0, false). Accepted
+    zero/past values still return (0, true); accepted delays beyond Duration's
+    range saturate. Zero RetryAfterOptions are equivalent to ParseRetryAfter.
+    Larger byte budgets are opt-in for already-bounded transport inputs, not
+    retained Error metadata. This function owns no transport, retry or clock.
 
 
 TYPES
@@ -626,6 +637,18 @@ type Options struct {
     Options configures protocol classification. RetryStatuses replaces the
     conservative default set. Transient may classify transport errors, but does
     not assert that replay is safe.
+
+type RetryAfterOptions struct {
+	// MaxBytes bounds raw input before trimming, from 1 through
+	// MaxRetryAfterInputBytes. Zero retains the 128-byte default.
+	MaxBytes int
+	// MaxDeltaSeconds rejects larger numeric values instead of saturating them.
+	// Zero retains saturation. HTTP dates are not subject to this numeric bound;
+	// callers retain total-delay ceilings and positive-hint policy.
+	MaxDeltaSeconds uint64
+}
+    RetryAfterOptions selects finite input admission for a borrowed header.
+    No header data or options are retained, and no retry policy is executed.
 
 package retryotel // import "github.com/faustbrian/go-retry/v2/adapters/otel"
 
