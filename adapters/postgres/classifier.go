@@ -8,7 +8,7 @@ import (
 	"net"
 	"reflect"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 

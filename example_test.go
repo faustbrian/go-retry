@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
-func ExampleDoStrict() {
-	policy, err := retry.NewPolicyStrict(retry.Config{
+func ExampleDo() {
+	policy, err := retry.NewPolicy(retry.Config{
 		Backoff: retry.Constant(0), MaxAttempts: 3,
 		Clock: retry.SystemClock{}, Sleeper: retry.SystemSleeper{},
 		Classifier: retry.RetryableClassifier(), HistoryLimit: 2,
@@ -19,7 +19,7 @@ func ExampleDoStrict() {
 		panic(err)
 	}
 	attempts := 0
-	result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		attempts++
 		if attempts == 1 {
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))

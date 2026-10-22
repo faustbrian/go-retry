@@ -4,6 +4,20 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-16
+
+### Changed
+
+- Make the explicit-outcome executor the sole `Do` API with `ExecutionResult`;
+  reject typed-nil optional policy collaborators and zero-attempt policies.
+- Use only current Resilience v2 work scopes and canonical OTel scope identity.
+
+### Removed
+
+- Remove legacy execution, `NewPolicyStrict`, `DoStrict`, `CanceledError`, and
+  the four deprecated flat adapters. Canonical packages own their types.
+- Remove opt-in legacy Retry-After admission rules; keep one bounded parser.
+
 ## [2.2.0] - 2026-10-15
 
 ### Added

@@ -10,33 +10,29 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
-	retrypostgres "github.com/faustbrian/go-retry/v2/adapters/postgres"
+	retry "github.com/faustbrian/go-retry/v3"
+	retrypostgres "github.com/faustbrian/go-retry/v3/adapters/postgres"
 
-	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/v2/retrypgx" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func TestClassifierPreservesPostgresAndConnectionParity(t *testing.T) {
-	t.Parallel()
-
+func TestClassifierPostgresAndConnectionDecisions(t *testing.T) {
 	classifier := retrypostgres.New()
-	legacyClassifier := legacy.NewClassifier()
-	inputs := []error{
-		&pgconn.PgError{Code: "40001"}, &pgconn.PgError{Code: "40P01"},
-		&pgconn.PgError{Code: "55P03"}, &pgconn.PgError{Code: "57P01"},
-		&pgconn.PgError{Code: "08006"}, &pgconn.PgError{Code: "23505"},
-		postgresSafeRetryFailure{}, errors.Join(errors.New("query"), pgconn.ErrConnClosed),
-		io.EOF, io.ErrUnexpectedEOF,
-		&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET},
-		errors.New("unknown"), nil,
-	}
-	for _, input := range inputs {
-		got, err := classifier.Classify(context.Background(), input)
-		legacyGot, legacyErr := legacyClassifier.Classify(context.Background(), input)
-		if err != nil || legacyErr != nil || got != legacyGot {
-			t.Fatalf("Classify(%T) = (%v,%v), legacy=(%v,%v)", input, got, err, legacyGot, legacyErr)
+	for _, test := range []struct {
+		err  error
+		want retry.Classification
+	}{
+		{&pgconn.PgError{Code: "40001"}, retry.ClassificationRetryable}, {&pgconn.PgError{Code: "40P01"}, retry.ClassificationRetryable},
+		{&pgconn.PgError{Code: "55P03"}, retry.ClassificationRetryable}, {&pgconn.PgError{Code: "57P01"}, retry.ClassificationRetryable},
+		{&pgconn.PgError{Code: "08006"}, retry.ClassificationRetryable}, {&pgconn.PgError{Code: "23505"}, retry.ClassificationPermanent},
+		{postgresSafeRetryFailure{}, retry.ClassificationRetryable}, {errors.Join(errors.New("query"), pgconn.ErrConnClosed), retry.ClassificationRetryable},
+		{io.EOF, retry.ClassificationRetryable}, {io.ErrUnexpectedEOF, retry.ClassificationRetryable},
+		{&net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}, retry.ClassificationRetryable},
+		{errors.New("unknown"), retry.ClassificationPermanent}, {nil, retry.ClassificationPermanent},
+	} {
+		got, err := classifier.Classify(t.Context(), test.err)
+		if err != nil || got != test.want {
+			t.Fatalf("classify %T=(%v,%v),want %v", test.err, got, err, test.want)
 		}
 	}
 }
@@ -105,21 +101,6 @@ func TestClassifierReturnedContextErrorPrecedesConnectionEvidence(t *testing.T) 
 	}
 }
 
-func TestLegacyClassifierKeepsPgErrorFirstPrecedence(t *testing.T) {
-	t.Parallel()
-
-	ctx := canceledPostgresContext()
-	failure := &pgconn.PgError{Code: "40001"}
-	legacyClassification, legacyErr := legacy.NewClassifier().Classify(ctx, failure)
-	strictClassification, strictErr := retrypostgres.New().Classify(ctx, failure)
-	if legacyErr != nil || legacyClassification != retry.ClassificationRetryable {
-		t.Fatalf("legacy = (%v,%v)", legacyClassification, legacyErr)
-	}
-	if strictErr != nil || strictClassification != retry.ClassificationPermanent {
-		t.Fatalf("successor = (%v,%v)", strictClassification, strictErr)
-	}
-}
-
 func TestClassifierRejectsNilAndTypedNilContext(t *testing.T) {
 	t.Parallel()
 
@@ -136,7 +117,7 @@ func TestClassifierRejectsNilAndTypedNilContext(t *testing.T) {
 func TestClassifierOwnsSuccessorIdentityAndZeroValueWorks(t *testing.T) {
 	t.Parallel()
 
-	if got := reflect.TypeOf(retrypostgres.Classifier{}).PkgPath(); got != "github.com/faustbrian/go-retry/v2/adapters/postgres" {
+	if got := reflect.TypeOf(retrypostgres.Classifier{}).PkgPath(); got != "github.com/faustbrian/go-retry/v3/adapters/postgres" {
 		t.Fatalf("PkgPath = %q", got)
 	}
 	classification, err := (retrypostgres.Classifier{}).Classify(context.Background(), &pgconn.PgError{Code: "40001"})

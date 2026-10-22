@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestInvokeStrictOperationCompletesPermitExactlyOnceAndIgnoresError(t *testing.T) {
+func TestInvokeOperationCompletesPermitExactlyOnceAndIgnoresError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("completion failed")
@@ -20,7 +20,7 @@ func TestInvokeStrictOperationCompletesPermitExactlyOnceAndIgnoresError(t *testi
 	}}
 	ctx := context.WithValue(context.Background(), strictInternalContextKey{}, "identity")
 	wantResult := AttemptResult[string]{Value: "done", Outcome: OutcomeKnown}
-	result, err := invokeStrictOperation(ctx, func(got context.Context) (AttemptResult[string], error) {
+	result, err := invokeOperation(ctx, func(got context.Context) (AttemptResult[string], error) {
 		events = append(events, "operation")
 		if got != ctx {
 			t.Fatal("operation context identity changed")
@@ -32,7 +32,7 @@ func TestInvokeStrictOperationCompletesPermitExactlyOnceAndIgnoresError(t *testi
 	}
 }
 
-func TestInvokeStrictOperationCompletesPermitDuringPanic(t *testing.T) {
+func TestInvokeOperationCompletesPermitDuringPanic(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("operation panic")
@@ -43,12 +43,12 @@ func TestInvokeStrictOperationCompletesPermitDuringPanic(t *testing.T) {
 			t.Fatalf("recovered=%v calls=%d", recovered, permit.calls)
 		}
 	}()
-	_, _ = invokeStrictOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
+	_, _ = invokeOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
 		panic(want)
 	}, permit)
 }
 
-func TestInvokeStrictOperationPropagatesPermitPanic(t *testing.T) {
+func TestInvokeOperationPropagatesPermitPanic(t *testing.T) {
 	t.Parallel()
 
 	want := errors.New("permit panic")
@@ -59,12 +59,12 @@ func TestInvokeStrictOperationPropagatesPermitPanic(t *testing.T) {
 			t.Fatalf("recovered=%v calls=%d", recovered, permit.calls)
 		}
 	}()
-	_, _ = invokeStrictOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
+	_, _ = invokeOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
 		return AttemptResult[string]{Outcome: OutcomeKnown}, nil
 	}, permit)
 }
 
-func TestInvokeStrictOperationPermitExecutionMechanics(t *testing.T) {
+func TestInvokeOperationPermitExecutionMechanics(t *testing.T) {
 	t.Run("blocking and concurrent", func(t *testing.T) {
 		entered := make(chan struct{}, 2)
 		release := make(chan struct{})
@@ -76,7 +76,7 @@ func TestInvokeStrictOperationPermitExecutionMechanics(t *testing.T) {
 		done := make(chan struct{}, 2)
 		for range 2 {
 			go func() {
-				_, _ = invokeStrictOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
+				_, _ = invokeOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
 					return AttemptResult[string]{Value: "done", Outcome: OutcomeKnown}, nil
 				}, permit)
 				done <- struct{}{}
@@ -117,12 +117,12 @@ func TestInvokeStrictOperationPermitExecutionMechanics(t *testing.T) {
 				return nil
 			}
 			reentered = true
-			_, err := invokeStrictOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
+			_, err := invokeOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
 				return AttemptResult[string]{Value: "inner", Outcome: OutcomeKnown}, nil
 			}, permit)
 			return err
 		}}
-		result, err := invokeStrictOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
+		result, err := invokeOperation(context.Background(), func(context.Context) (AttemptResult[string], error) {
 			return AttemptResult[string]{Value: "outer", Outcome: OutcomeKnown}, nil
 		}, permit)
 		if err != nil || result.Value != "outer" || !reentered || permit.calls.Load() != 2 {
@@ -133,7 +133,7 @@ func TestInvokeStrictOperationPermitExecutionMechanics(t *testing.T) {
 	t.Run("cancellation does not skip completion", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		permit := &strictConcurrentPermitProbe{}
-		result, err := invokeStrictOperation(ctx, func(got context.Context) (AttemptResult[string], error) {
+		result, err := invokeOperation(ctx, func(got context.Context) (AttemptResult[string], error) {
 			if got != ctx {
 				t.Fatal("operation context identity changed")
 			}

@@ -1,38 +1,26 @@
-# Deprecation Policy
+# API Replacement Policy
 
-Deprecations MUST identify the replacement, reason, migration steps, and
-earliest removal version. Public Go identifiers use a valid `Deprecated:` doc
-paragraph and corresponding changelog entry.
+A breaking replacement removes the superseded API in the new major version.
+The release notes and migration guide must identify the replacement, reason,
+observable behavior changes and consumer adoption steps. Do not introduce an
+alias, forwarding package or parallel legacy engine to postpone migration.
+Published versions and their history remain immutable; they are not part of
+the current supported source surface.
 
-At `v1` and later, a supported replacement SHOULD exist for at least one minor
-release before removal. Security or correctness defects MAY require faster
-removal when continued support would be unsafe; the release notes must explain
-the exception.
+## Version 3 adapter and executor replacement
 
-Silent behavior changes, undocumented aliases, and indefinite deprecated code
-are prohibited. Deprecations are checked during compatibility and release
-review.
+Version 3 removes `retryhttp`, `retrypgx`, `retrylog` and `retrytelemetry`.
+Their replacements are `adapters/http`, `adapters/postgres`, `adapters/slog`
+and `adapters/otel`. It also replaces the two executor and policy-constructor
+variants with one explicit-outcome `Do` and one validating `NewPolicy`.
+Only the current Resilience v2 scope is supported. There is no coexistence
+interval or compatibility bridge in this major version.
 
-## Target-oriented adapter migration
+Migrate consumers, their tests and observability selectors together using
+[`docs/migration.md`](docs/migration.md). Qualify the selected released module
+and the complete logical execution before rollout. Rollback restores the
+previous application, dependency and configuration revision together; it does
+not reintroduce legacy imports into the version 3 application.
 
-The package paths `retryhttp`, `retrypgx`, `retrylog`, and `retrytelemetry` are
-deprecated in favor of `adapters/http`, `adapters/postgres`, `adapters/slog`,
-and `adapters/otel`. The successors add strict validation, bounded disclosure,
-or target-oriented observability identity without changing the legacy paths.
-See [`docs/migration.md`](docs/migration.md) for exact behavior and type-identity
-differences.
-
-The v2 module retains all named compatibility packages and their distinct
-type identities. Flat HTTP constructors gain explicit admission-error returns
-and share canonical input bounds; default errors no longer format causes.
-These necessary security changes are documented major-version migration, not
-removal of the retained paths. Published v1 behavior remains historical.
-
-Removal cannot occur before the longer of 180 days after the successors become
-publicly consumable or two stable minor root-module releases that contain both
-old and new paths. It also requires owned-consumer migration, clean external
-consumer evidence, and a separately authorized major release. Rollback consists
-of restoring the corresponding legacy import and its documented v1 behavior.
-
-`retryadapter` is not deprecated. Its caller-owned predicates are a justified
-semantic boundary rather than naming debt.
+`retryadapter` is an active caller-owned predicate boundary for domain policy,
+not a deprecated package or a second retry engine.

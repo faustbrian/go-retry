@@ -11,11 +11,8 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
-	retryslog "github.com/faustbrian/go-retry/v2/adapters/slog"
-
-	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/v2/retrylog" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	retry "github.com/faustbrian/go-retry/v3"
+	retryslog "github.com/faustbrian/go-retry/v3/adapters/slog"
 )
 
 func TestNewValidatesLoggerAndPolicyID(t *testing.T) {
@@ -88,7 +85,7 @@ func TestObserverBoundsEveryClassificationAndReason(t *testing.T) {
 	}
 }
 
-func TestObserverMappingsMatchLegacyAndAddOutcomeUnknown(t *testing.T) {
+func TestObserverCategoricalMappings(t *testing.T) {
 	t.Parallel()
 
 	classifications := map[retry.Classification]string{
@@ -97,10 +94,9 @@ func TestObserverMappingsMatchLegacyAndAddOutcomeUnknown(t *testing.T) {
 	}
 	for classification, want := range classifications {
 		observation := retry.Observation{Classification: classification}
-		successor := slogFields(t, observation, false)
-		compatibility := slogFields(t, observation, true)
-		if successor["classification"] != want || !reflect.DeepEqual(successor, compatibility) {
-			t.Fatalf("classification %d successor=%v legacy=%v", classification, successor, compatibility)
+		successor := slogFields(t, observation)
+		if successor["classification"] != want {
+			t.Fatalf("classification %d fields=%v", classification, successor)
 		}
 	}
 	reasons := map[retry.Reason]string{
@@ -112,13 +108,12 @@ func TestObserverMappingsMatchLegacyAndAddOutcomeUnknown(t *testing.T) {
 	}
 	for reason, want := range reasons {
 		observation := retry.Observation{Reason: reason}
-		successor := slogFields(t, observation, false)
-		compatibility := slogFields(t, observation, true)
-		if successor["reason"] != want || !reflect.DeepEqual(successor, compatibility) {
-			t.Fatalf("reason %q successor=%v legacy=%v", reason, successor, compatibility)
+		successor := slogFields(t, observation)
+		if successor["reason"] != want {
+			t.Fatalf("reason %q fields=%v", reason, successor)
 		}
 	}
-	if got := slogFields(t, retry.Observation{Reason: retry.ReasonOutcomeUnknown}, false)["reason"]; got != "outcome_unknown" {
+	if got := slogFields(t, retry.Observation{Reason: retry.ReasonOutcomeUnknown})["reason"]; got != "outcome_unknown" {
 		t.Fatalf("outcome unknown reason = %v", got)
 	}
 }
@@ -185,21 +180,21 @@ func TestObserverSinkIsSynchronousConcurrentAndReentrant(t *testing.T) {
 	})
 }
 
-func TestDoStrictIsolatesSuccessorSlogSinkPanic(t *testing.T) {
+func TestDoIsolatesSuccessorSlogSinkPanic(t *testing.T) {
 	t.Parallel()
 
 	observer, err := retryslog.New(retryslog.Options{Logger: slog.New(panicHandler{panicValue: "sink panic"})})
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := retry.NewPolicyStrict(retry.Config{
+	policy, err := retry.NewPolicy(retry.Config{
 		Backoff: retry.Constant(0), MaxAttempts: 1, Clock: retry.SystemClock{},
 		Sleeper: retry.SystemSleeper{}, Classifier: retry.RetryableClassifier(), Observer: observer,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		return retry.AttemptResult[string]{Value: "done", Outcome: retry.OutcomeKnown}, nil
 	})
 	if err != nil || result.Value != "done" {
@@ -207,7 +202,7 @@ func TestDoStrictIsolatesSuccessorSlogSinkPanic(t *testing.T) {
 	}
 }
 
-func TestDoStrictDeliversReachedSlogObservationAfterCancellationRace(t *testing.T) {
+func TestDoDeliversReachedSlogObservationAfterCancellationRace(t *testing.T) {
 	t.Parallel()
 
 	calls := 0
@@ -222,7 +217,7 @@ func TestDoStrictDeliversReachedSlogObservationAfterCancellationRace(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := retry.NewPolicyStrict(retry.Config{
+	policy, err := retry.NewPolicy(retry.Config{
 		Backoff: retry.Constant(0), MaxAttempts: 1, Clock: retry.SystemClock{},
 		Sleeper: retry.SystemSleeper{}, Classifier: retry.RetryableClassifier(), Observer: observer,
 	})
@@ -230,7 +225,7 @@ func TestDoStrictDeliversReachedSlogObservationAfterCancellationRace(t *testing.
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		cancel()
 		return retry.AttemptResult[string]{Value: "done", Outcome: retry.OutcomeKnown}, nil
 	})
@@ -259,7 +254,7 @@ func TestObserverPropagatesDirectSinkPanicSynchronously(t *testing.T) {
 func TestSuccessorSlogTypesOwnReflectionIdentity(t *testing.T) {
 	t.Parallel()
 
-	const want = "github.com/faustbrian/go-retry/v2/adapters/slog"
+	const want = "github.com/faustbrian/go-retry/v3/adapters/slog"
 	for _, value := range []any{retryslog.Options{}, retryslog.Observer{}} {
 		if got := reflect.TypeOf(value).PkgPath(); got != want {
 			t.Fatalf("%T PkgPath = %q", value, got)
@@ -287,23 +282,15 @@ func (handler *callbackHandler) Handle(ctx context.Context, record slog.Record) 
 func (handler *callbackHandler) WithAttrs([]slog.Attr) slog.Handler { return handler }
 func (handler *callbackHandler) WithGroup(string) slog.Handler      { return handler }
 
-func slogFields(t *testing.T, observation retry.Observation, compatibility bool) map[string]any {
+func slogFields(t *testing.T, observation retry.Observation) map[string]any {
 	t.Helper()
 	var output bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&output, nil))
-	if compatibility {
-		observer, err := legacy.New(legacy.Options{Logger: logger, Level: slog.LevelWarn, PolicyID: "policy"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		observer.Observe(observation)
-	} else {
-		observer, err := retryslog.New(retryslog.Options{Logger: logger, Level: slog.LevelWarn, PolicyID: "policy"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		observer.Observe(observation)
+	observer, err := retryslog.New(retryslog.Options{Logger: logger, Level: slog.LevelWarn, PolicyID: "policy"})
+	if err != nil {
+		t.Fatal(err)
 	}
+	observer.Observe(observation)
 	fields := map[string]any{}
 	if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
 		t.Fatal(err)

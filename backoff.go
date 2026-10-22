@@ -1,6 +1,6 @@
 // Package retry executes explicitly classified operations under bounded retry
-// policies. Start with a constructed Policy and DoStrict when dispatch outcome
-// matters, or Do for its compatibility cancellation rules. It never decides
+// policies. Start with a constructed Policy and Do, and declare each attempt
+// outcome explicitly. The executor never decides
 // idempotency or undoes side effects. Attempt limits are mandatory; duration
 // budgets and shared resilience admission are explicit opt-ins.
 //
@@ -8,8 +8,8 @@
 // overlap or reenter and are not forcibly preempted. Built-in strategies have
 // immutable state; consumers synchronize custom collaborators and RNGs. There
 // are no package workers or shutdown lifecycle. HTTP, PostgreSQL, logging and
-// telemetry adapters have distinct canonical and compatibility contracts; the
-// module includes their external dependencies, while the core imports resilience.
+// telemetry adapters own their target-specific contracts. The module includes
+// their external dependencies, while the core imports resilience.
 // No retry-owned transport, database pool or telemetry exporter is created.
 package retry
 

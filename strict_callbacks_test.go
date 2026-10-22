@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-resilience"
-	retry "github.com/faustbrian/go-retry/v2"
+	"github.com/faustbrian/go-resilience/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
-func TestDoStrictNormalizesContextMatchingSleeperErrors(t *testing.T) {
+func TestDoNormalizesContextMatchingSleeperErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -30,7 +30,7 @@ func TestDoStrictNormalizesContextMatchingSleeperErrors(t *testing.T) {
 			config := baseConfig(clock, retry.Config{})
 			config.Sleeper = failingSleeper{test.err}
 			policy := mustStrictPolicy(t, config)
-			result, err := retry.DoStrict(context.Background(), policy, strictRetryableFailure)
+			result, err := retry.Do(context.Background(), policy, strictRetryableFailure)
 			var contextErr *retry.ContextError
 			if !errors.As(err, &contextErr) || err.Error() != test.text || !errors.Is(err, test.want) || errors.Is(err, test.err) || contextErr.Outcome() != retry.OutcomeKnown || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonCanceled {
 				t.Fatalf("result=%+v err=%v", result, err)
@@ -39,7 +39,7 @@ func TestDoStrictNormalizesContextMatchingSleeperErrors(t *testing.T) {
 	}
 }
 
-func TestDoStrictChecksCancellationBetweenAttempts(t *testing.T) {
+func TestDoChecksCancellationBetweenAttempts(t *testing.T) {
 	t.Parallel()
 
 	t.Run("after sleep", func(t *testing.T) {
@@ -48,7 +48,7 @@ func TestDoStrictChecksCancellationBetweenAttempts(t *testing.T) {
 		config := baseConfig(clock, retry.Config{})
 		config.Sleeper = cancelingSleeper{cancel: cancel}
 		policy := mustStrictPolicy(t, config)
-		result, err := retry.DoStrict(ctx, policy, strictRetryableFailure)
+		result, err := retry.Do(ctx, policy, strictRetryableFailure)
 		var contextErr *retry.ContextError
 		if !errors.As(err, &contextErr) || result.Outcome != retry.OutcomeKnown || result.Retry.Attempts != 1 || result.Retry.Reason != retry.ReasonCanceled {
 			t.Fatalf("result=%+v err=%v", result, err)
@@ -60,7 +60,7 @@ func TestDoStrictChecksCancellationBetweenAttempts(t *testing.T) {
 		clock := newManualClock(time.Unix(100, 0))
 		policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
 		calls := 0
-		result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 			calls++
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
 		})
@@ -76,14 +76,14 @@ func TestDoStrictChecksCancellationBetweenAttempts(t *testing.T) {
 		config := baseConfig(clock, retry.Config{})
 		config.Sleeper = cancelAndFailSleeper{cancel: cancel, err: errors.New("sensitive sleeper")}
 		policy := mustStrictPolicy(t, config)
-		result, err := retry.DoStrict(ctx, policy, strictRetryableFailure)
+		result, err := retry.Do(ctx, policy, strictRetryableFailure)
 		if !errors.Is(err, context.Canceled) || err.Error() != "retry canceled" || result.Outcome != retry.OutcomeKnown {
 			t.Fatalf("result=%+v err=%v", result, err)
 		}
 	})
 }
 
-func TestDoStrictDeadlineBetweenAttempts(t *testing.T) {
+func TestDoDeadlineBetweenAttempts(t *testing.T) {
 	t.Parallel()
 
 	ctx := &mutableStrictContext{}
@@ -91,14 +91,14 @@ func TestDoStrictDeadlineBetweenAttempts(t *testing.T) {
 	config := baseConfig(clock, retry.Config{})
 	config.Sleeper = deadlineSettingSleeper{ctx: ctx}
 	policy := mustStrictPolicy(t, config)
-	result, err := retry.DoStrict(ctx, policy, strictRetryableFailure)
+	result, err := retry.Do(ctx, policy, strictRetryableFailure)
 	var contextErr *retry.ContextError
 	if !errors.As(err, &contextErr) || err.Error() != "retry deadline exceeded" || !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, retry.ErrOutcomeUnknown) || contextErr.Outcome() != retry.OutcomeKnown || result.Outcome != retry.OutcomeKnown || result.Retry.Attempts != 1 || result.Retry.Reason != retry.ReasonCanceled || !equalRetryResult(contextErr.Result(), result.Retry) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
 
-func TestDoStrictChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
+func TestDoChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
 	t.Parallel()
 
 	t.Run("before first", func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestDoStrictChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
 			Clock: clock, Sleeper: failingSleeper{errors.New("unused")}, Classifier: retry.RetryableClassifier(),
 		})
 		calls := 0
-		result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 			calls++
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, errors.New("unused")
 		})
@@ -117,7 +117,7 @@ func TestDoStrictChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
 		if calls != 0 || !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted" || result.Outcome != retry.OutcomeNotDispatched || result.Retry.Reason != retry.ReasonElapsedBudget || !equalRetryResult(budget.Result(), result.Retry) {
 			t.Fatalf("calls=%d result=%+v err=%v", calls, result, err)
 		}
-		assertDefensiveStrictResult(t, budget.Result, result.Retry)
+		assertDefensiveResult(t, budget.Result, result.Retry)
 		assertStrictCarrier(t, err, []error{context.DeadlineExceeded})
 	})
 
@@ -129,7 +129,7 @@ func TestDoStrictChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
 			Classifier: retry.RetryableClassifier(), HistoryLimit: 1,
 		})
 		calls := 0
-		result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 			calls++
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
 		})
@@ -137,12 +137,12 @@ func TestDoStrictChecksElapsedBudgetBeforeFirstAndLaterDispatch(t *testing.T) {
 		if calls != 1 || !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonElapsedBudget || !equalRetryResult(budget.Result(), result.Retry) {
 			t.Fatalf("calls=%d result=%+v err=%v", calls, result, err)
 		}
-		assertDefensiveStrictResult(t, budget.Result, result.Retry)
+		assertDefensiveResult(t, budget.Result, result.Retry)
 		assertStrictCarrier(t, err, []error{context.DeadlineExceeded})
 	})
 }
 
-func TestDoStrictCompletesPermitsAndReportsLaterWorkBudgetFailure(t *testing.T) {
+func TestDoCompletesPermitsAndReportsLaterWorkBudgetFailure(t *testing.T) {
 	t.Parallel()
 
 	for _, historyLimit := range []uint{0, 2} {
@@ -150,7 +150,7 @@ func TestDoStrictCompletesPermitsAndReportsLaterWorkBudgetFailure(t *testing.T) 
 		budgetValue, err := resilience.NewBudget(resilience.BudgetConfig{
 			MaxResources: 1, MaxAdditionalPerExecution: 1,
 			MaxConcurrentAdditional: 1, MaxAdditionalPerWindow: 1,
-			AdditionalWindow: time.Minute, PermitTTL: time.Minute, Clock: clock,
+			AdditionalWindow: time.Minute, PermitTTL: time.Minute, Clock: clock, MaxScopes: 1,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -171,17 +171,17 @@ func TestDoStrictCompletesPermitsAndReportsLaterWorkBudgetFailure(t *testing.T) 
 		})
 		operationErr := retry.Retryable(errors.New("downstream"))
 		calls := 0
-		result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 			calls++
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, operationErr
 		})
 		var budgetErr *retry.BudgetError
 		var rejection *resilience.BudgetRejectionError
-		if calls != 2 || !errors.As(err, &budgetErr) || budgetErr.Kind != retry.BudgetWork || err.Error() != "retry work budget exhausted" || len(err.Error()) > retry.MaxStrictTerminalErrorBytes || !errors.Is(err, resilience.ErrBudgetRejected) || !errors.As(err, &rejection) || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonWorkBudget || !equalRetryResult(budgetErr.Result(), result.Retry) {
+		if calls != 2 || !errors.As(err, &budgetErr) || budgetErr.Kind != retry.BudgetWork || err.Error() != "retry work budget exhausted" || len(err.Error()) > retry.MaxTerminalErrorBytes || !errors.Is(err, resilience.ErrBudgetRejected) || !errors.As(err, &rejection) || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != retry.ReasonWorkBudget || !equalRetryResult(budgetErr.Result(), result.Retry) {
 			t.Fatalf("history=%d calls=%d result=%+v err=%v", historyLimit, calls, result, err)
 		}
 		assertStrictCarrier(t, err, []error{rejection})
-		assertDefensiveStrictResult(t, budgetErr.Result, result.Retry)
+		assertDefensiveResult(t, budgetErr.Result, result.Retry)
 		if len(result.Retry.History) != int(historyLimit) {
 			t.Fatalf("history=%+v", result.Retry.History)
 		}
@@ -197,7 +197,7 @@ func TestDoStrictCompletesPermitsAndReportsLaterWorkBudgetFailure(t *testing.T) 
 	}
 }
 
-func TestDoStrictCancellationDuringWorkAdmissionUsesContextOutcome(t *testing.T) {
+func TestDoCancellationDuringWorkAdmissionUsesContextOutcome(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -215,7 +215,7 @@ func TestDoStrictCancellationDuringWorkAdmissionUsesContextOutcome(t *testing.T)
 			budgetValue, err := resilience.NewBudget(resilience.BudgetConfig{
 				MaxResources: 1, MaxAdditionalPerExecution: 2,
 				MaxConcurrentAdditional: 1, MaxAdditionalPerWindow: 2,
-				AdditionalWindow: time.Minute, PermitTTL: time.Minute, Clock: clock,
+				AdditionalWindow: time.Minute, PermitTTL: time.Minute, Clock: clock, MaxScopes: 1,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -236,7 +236,7 @@ func TestDoStrictCancellationDuringWorkAdmissionUsesContextOutcome(t *testing.T)
 				UseResilienceBudget: true,
 			})
 			calls := 0
-			result, executionErr := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+			result, executionErr := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				calls++
 				return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
 			})
@@ -249,7 +249,7 @@ func TestDoStrictCancellationDuringWorkAdmissionUsesContextOutcome(t *testing.T)
 	}
 }
 
-func TestDoStrictCompletesPermitWhenCancellationLandsAfterAdmission(t *testing.T) {
+func TestDoCompletesPermitWhenCancellationLandsAfterAdmission(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -275,7 +275,7 @@ func TestDoStrictCompletesPermitWhenCancellationLandsAfterAdmission(t *testing.T
 				UseResilienceBudget: true,
 			})
 			calls := 0
-			result, executionErr := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+			result, executionErr := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				calls++
 				return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
 			})
@@ -295,7 +295,7 @@ func TestDoStrictCompletesPermitWhenCancellationLandsAfterAdmission(t *testing.T
 	}
 }
 
-func TestDoStrictCompletesUndispatchedPermitOnElapsedExitAndClockPanic(t *testing.T) {
+func TestDoCompletesUndispatchedPermitOnElapsedExitAndClockPanic(t *testing.T) {
 	t.Run("elapsed exit", func(t *testing.T) {
 		start := time.Unix(660, 0)
 		clock := &sequenceClock{times: []time.Time{start, start, start.Add(2 * time.Second), start.Add(2 * time.Second)}}
@@ -308,7 +308,7 @@ func TestDoStrictCompletesUndispatchedPermitOnElapsedExitAndClockPanic(t *testin
 			Backoff: retry.Constant(0), MaxAttempts: 1, MaxElapsed: time.Second,
 			Clock: clock, Sleeper: noOpSleeper{}, Classifier: retry.RetryableClassifier(), UseResilienceBudget: true,
 		})
-		result, executionErr := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, executionErr := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 			t.Fatal("operation dispatched after elapsed budget")
 			return retry.AttemptResult[string]{}, nil
 		})
@@ -336,14 +336,14 @@ func TestDoStrictCompletesUndispatchedPermitOnElapsedExitAndClockPanic(t *testin
 				t.Fatalf("recovered=%v permits=%+v", recovered, scope.permits)
 			}
 		}()
-		_, _ = retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+		_, _ = retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 			t.Fatal("operation dispatched after clock panic")
 			return retry.AttemptResult[string]{}, nil
 		})
 	})
 }
 
-func TestDoStrictCancelsAttemptContextWhenOperationOrPermitPanics(t *testing.T) {
+func TestDoCancelsAttemptContextWhenOperationOrPermitPanics(t *testing.T) {
 	want := errors.New("panic")
 	for _, role := range []string{"operation", "permit"} {
 		t.Run(role, func(t *testing.T) {
@@ -372,7 +372,7 @@ func TestDoStrictCancelsAttemptContextWhenOperationOrPermitPanics(t *testing.T) 
 					t.Fatalf("recovered=%v timeouts=%d cancels=%d permit=%d", recovered, clock.timeouts, clock.cancels, permitCalls)
 				}
 			}()
-			_, _ = retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+			_, _ = retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				if role == "operation" {
 					panic(want)
 				}
@@ -382,14 +382,14 @@ func TestDoStrictCancelsAttemptContextWhenOperationOrPermitPanics(t *testing.T) 
 	}
 }
 
-func TestDoStrictObserverPanicIsIsolatedAndOperationPanicPropagates(t *testing.T) {
+func TestDoObserverPanicIsIsolatedAndOperationPanicPropagates(t *testing.T) {
 	t.Parallel()
 
 	clock := newManualClock(time.Unix(100, 0))
 	config := baseConfig(clock, retry.Config{})
 	config.Observer = retry.ObserveFunc(func(retry.Observation) { panic("observer panic") })
 	policy := mustStrictPolicy(t, config)
-	result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		return retry.AttemptResult[string]{Value: "done", Outcome: retry.OutcomeKnown}, nil
 	})
 	if err != nil || result.Value != "done" || result.Retry.Reason != retry.ReasonSucceeded {
@@ -402,7 +402,7 @@ func TestDoStrictObserverPanicIsIsolatedAndOperationPanicPropagates(t *testing.T
 			t.Fatalf("recovered=%v calls=%d", recovered, calls)
 		}
 	}()
-	_, _ = retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+	_, _ = retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		calls++
 		panic("operation panic")
 	})
@@ -422,7 +422,7 @@ func TestObserveFuncDirectPanicPropagates(t *testing.T) {
 	observer.Observe(retry.Observation{})
 }
 
-func TestDoStrictCallbackOrderingIdentityAndCardinality(t *testing.T) {
+func TestDoCallbackOrderingIdentityAndCardinality(t *testing.T) {
 	t.Parallel()
 
 	parent := context.WithValue(context.Background(), strictContextKey{}, "identity")
@@ -445,7 +445,7 @@ func TestDoStrictCallbackOrderingIdentityAndCardinality(t *testing.T) {
 	}
 	policy := mustStrictPolicy(t, config)
 	calls := 0
-	result, err := retry.DoStrict(parent, policy, func(ctx context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(parent, policy, func(ctx context.Context) (retry.AttemptResult[string], error) {
 		calls++
 		if ctx != parent || ctx.Value(strictContextKey{}) != "identity" {
 			t.Fatalf("operation context identity changed: %v", ctx)
@@ -460,7 +460,7 @@ func TestDoStrictCallbackOrderingIdentityAndCardinality(t *testing.T) {
 	}
 
 	classifications = 0
-	for _, operation := range []retry.StrictOperation[string]{
+	for _, operation := range []retry.Operation[string]{
 		func(context.Context) (retry.AttemptResult[string], error) {
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeUnknown}, errors.New("ambiguous")
 		},
@@ -468,14 +468,14 @@ func TestDoStrictCallbackOrderingIdentityAndCardinality(t *testing.T) {
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeNotDispatched}, errors.New("invalid")
 		},
 	} {
-		_, _ = retry.DoStrict(parent, policy, operation)
+		_, _ = retry.Do(parent, policy, operation)
 	}
 	if classifications != 0 {
 		t.Fatalf("unknown or invalid outcomes classified %d times", classifications)
 	}
 }
 
-func TestDoStrictInvokesEveryPolicyCollaboratorInReleasedOrder(t *testing.T) {
+func TestDoInvokesEveryPolicyCollaboratorInReleasedOrder(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.WithValue(context.Background(), strictContextKey{}, "collaborator identity")
@@ -495,7 +495,7 @@ func TestDoStrictInvokesEveryPolicyCollaboratorInReleasedOrder(t *testing.T) {
 	}
 	policy := mustStrictPolicy(t, config)
 	calls := 0
-	result, err := retry.DoStrict(ctx, policy, func(got context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(got context.Context) (retry.AttemptResult[string], error) {
 		calls++
 		trace.add(fmt.Sprintf("operation%d", calls))
 		if got != ctx {
@@ -512,7 +512,7 @@ func TestDoStrictInvokesEveryPolicyCollaboratorInReleasedOrder(t *testing.T) {
 	}
 }
 
-func TestDoStrictUsesTimeoutClockDerivedAttemptContextExactlyOnce(t *testing.T) {
+func TestDoUsesTimeoutClockDerivedAttemptContextExactlyOnce(t *testing.T) {
 	t.Parallel()
 
 	parent := context.WithValue(context.Background(), strictContextKey{}, "parent")
@@ -522,7 +522,7 @@ func TestDoStrictUsesTimeoutClockDerivedAttemptContextExactlyOnce(t *testing.T) 
 		Backoff: retry.Constant(0), MaxAttempts: 1, AttemptTimeout: time.Second,
 		Clock: clock, Sleeper: noOpSleeper{}, Classifier: retry.RetryableClassifier(),
 	})
-	result, err := retry.DoStrict(parent, policy, func(ctx context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(parent, policy, func(ctx context.Context) (retry.AttemptResult[string], error) {
 		if ctx != derived || ctx.Value(strictContextKey{}) != "attempt" {
 			t.Fatalf("attempt context = %v", ctx)
 		}
@@ -547,7 +547,7 @@ func TestClassifyFuncDirectPanicPropagates(t *testing.T) {
 	_, _ = classifier.Classify(context.Background(), errors.New("operation"))
 }
 
-func TestDoStrictDeliversReachedTerminalObservationAfterCancellationRace(t *testing.T) {
+func TestDoDeliversReachedTerminalObservationAfterCancellationRace(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -556,7 +556,7 @@ func TestDoStrictDeliversReachedTerminalObservationAfterCancellationRace(t *test
 	config := baseConfig(clock, retry.Config{})
 	config.Observer = retry.ObserveFunc(func(observation retry.Observation) { observations = append(observations, observation) })
 	policy := mustStrictPolicy(t, config)
-	result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		cancel()
 		return retry.AttemptResult[string]{Value: "done", Outcome: retry.OutcomeKnown}, nil
 	})
@@ -565,7 +565,7 @@ func TestDoStrictDeliversReachedTerminalObservationAfterCancellationRace(t *test
 	}
 }
 
-func TestDoStrictOperationIsSynchronousConcurrentAndReentrant(t *testing.T) {
+func TestDoOperationIsSynchronousConcurrentAndReentrant(t *testing.T) {
 	t.Run("blocking and concurrent", func(t *testing.T) {
 		clock := newManualClock(time.Unix(900, 0))
 		policy := mustStrictPolicy(t, retry.Config{
@@ -574,14 +574,14 @@ func TestDoStrictOperationIsSynchronousConcurrentAndReentrant(t *testing.T) {
 		})
 		entered := make(chan struct{}, 2)
 		release := make(chan struct{})
-		operation := retry.StrictOperation[string](func(context.Context) (retry.AttemptResult[string], error) {
+		operation := retry.Operation[string](func(context.Context) (retry.AttemptResult[string], error) {
 			entered <- struct{}{}
 			<-release
 			return retry.AttemptResult[string]{Value: "done", Outcome: retry.OutcomeKnown}, nil
 		})
 		done := make(chan struct{}, 2)
 		for range 2 {
-			go func() { _, _ = retry.DoStrict(context.Background(), policy, operation); done <- struct{}{} }()
+			go func() { _, _ = retry.Do(context.Background(), policy, operation); done <- struct{}{} }()
 		}
 		for range 2 {
 			select {
@@ -594,7 +594,7 @@ func TestDoStrictOperationIsSynchronousConcurrentAndReentrant(t *testing.T) {
 		select {
 		case <-done:
 			close(release)
-			t.Fatal("DoStrict returned while operation blocked")
+			t.Fatal("Do returned while operation blocked")
 		default:
 		}
 		close(release)
@@ -602,7 +602,7 @@ func TestDoStrictOperationIsSynchronousConcurrentAndReentrant(t *testing.T) {
 			select {
 			case <-done:
 			case <-time.After(time.Second):
-				t.Fatal("DoStrict did not return")
+				t.Fatal("Do did not return")
 			}
 		}
 	})
@@ -614,9 +614,9 @@ func TestDoStrictOperationIsSynchronousConcurrentAndReentrant(t *testing.T) {
 			Sleeper: noOpSleeper{}, Classifier: retry.RetryableClassifier(),
 		})
 		calls := 0
-		outer, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+		outer, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 			calls++
-			inner, innerErr := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+			inner, innerErr := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 				calls++
 				return retry.AttemptResult[string]{Value: "inner", Outcome: retry.OutcomeKnown}, nil
 			})

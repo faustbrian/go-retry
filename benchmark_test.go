@@ -6,12 +6,12 @@ import (
 
 	avastretry "github.com/avast/retry-go/v4"
 	backoff "github.com/cenkalti/backoff/v5"
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 // BenchmarkSuccessfulExecution compares a single successful callback, not full
-// retry/composition semantics. The retry policy is outside the timed sub-benchmark;
-// strict-policy construction is in its sub-benchmark setup, not each iteration.
+// retry/composition semantics. The retry policy is constructed outside the timed
+// sub-benchmark, not on each iteration.
 // Peer APIs perform their own per-call setup, so these are not equal-work claims.
 func BenchmarkSuccessfulExecution(b *testing.B) {
 	policy, err := retry.NewPolicy(retry.Config{
@@ -26,22 +26,8 @@ func BenchmarkSuccessfulExecution(b *testing.B) {
 	b.Run("retry", func(b *testing.B) {
 		b.ReportAllocs()
 		for range b.N {
-			_, _, _ = retry.Do(ctx, policy, func(context.Context) (struct{}, error) { return struct{}{}, nil })
-		}
-	})
-	b.Run("retry-strict", func(b *testing.B) {
-		strictPolicy, strictErr := retry.NewPolicyStrict(retry.Config{
-			Backoff: retry.Constant(0), MaxAttempts: 1,
-			Clock: retry.SystemClock{}, Sleeper: retry.SystemSleeper{},
-			Classifier: retry.RetryableClassifier(),
-		})
-		if strictErr != nil {
-			b.Fatal(strictErr)
-		}
-		b.ReportAllocs()
-		for range b.N {
-			_, _ = retry.DoStrict(ctx, strictPolicy, func(context.Context) (retry.AttemptResult[struct{}], error) {
-				return retry.AttemptResult[struct{}]{Outcome: retry.OutcomeKnown}, nil
+			_, _ = retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
+				return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, nil
 			})
 		}
 	})

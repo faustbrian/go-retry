@@ -18,7 +18,7 @@ verified idempotency contract. That decision stays at the call site.
 
 Use `OutcomeKnown` only when the callback can prove what happened. Use
 `OutcomeUnknown` after dispatch when a response loss, timeout, cancellation, or
-protocol ambiguity prevents that proof. `DoStrict` never retries an unknown
+protocol ambiguity prevents that proof. `Do` never retries an unknown
 outcome. Reconcile using the operation's durable identity before deciding
 whether another attempt is safe. `OutcomeNotDispatched` is reserved for
 pre-dispatch termination and must not be returned by callbacks.

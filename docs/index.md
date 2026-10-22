@@ -23,11 +23,10 @@ certify every current main revision or a deployed application.
 ## Operate and evaluate boundaries
 
 - [Operations](operations.md).
-- [Security model: v2 API family](security.md).
+- [Security model: v3 API family](security.md).
 
 ## Maintainer, specification, and evidence references
 
-- [Source documentation audit](source-documentation-audit.md).
 - [Verification](verification.md).
 
 ## Related next steps

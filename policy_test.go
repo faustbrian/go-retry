@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 func TestDoRetriesExplicitFailuresAndReturnsMetadata(t *testing.T) {
@@ -26,13 +26,15 @@ func TestDoRetriesExplicitFailuresAndReturnsMetadata(t *testing.T) {
 	})
 
 	attempts := 0
-	value, result, err := retry.Do(context.Background(), policy, func(context.Context) (string, error) {
+	execution33, executionError33 := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		attempts++
 		if attempts < 3 {
-			return "discarded", errors.New("temporary")
+			return retry.AttemptResult[string]{Value: "discarded", Outcome: retry.OutcomeKnown}, errors.New("temporary")
 		}
-		return "kept", nil
+		return retry.AttemptResult[string]{Value: "kept", Outcome: retry.OutcomeKnown}, nil
 	})
+	value, result, err := execution33.Value, execution33.Retry, executionError33
+
 	if err != nil {
 		t.Fatalf("Do returned error: %v", err)
 	}
@@ -60,10 +62,11 @@ func TestDoReturnsTypedExhaustedErrorWithCause(t *testing.T) {
 		Classifier:   retry.RetryableClassifier(),
 		HistoryLimit: 1,
 	})
-
-	_, result, err := retry.Do(context.Background(), policy, func(context.Context) (struct{}, error) {
-		return struct{}{}, retry.Retryable(cause)
+	execution34, executionError34 := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
+		return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, retry.Retryable(cause)
 	})
+	_, result, err := execution34.Value, execution34.Retry, executionError34
+
 	var exhausted *retry.ExhaustedError
 	if !errors.As(err, &exhausted) || !errors.Is(err, cause) {
 		t.Fatalf("error = %v, want exhausted error preserving cause", err)

@@ -12,7 +12,7 @@ Sleeper receives the caller context, not a separate elapsed-budget context.
 `MinDelay` and `MaxDelay` clamp each selected delay, including Retry-After hints;
 the maximum can shorten a server hint. Zero duration budgets disable that bound.
 
-With `DoStrict`, cancellation before dispatch returns `ContextError` with
+With `Do`, cancellation before dispatch returns `ContextError` with
 `OutcomeNotDispatched`; cancellation between known attempts returns
 `OutcomeKnown`; and cancellation after ambiguous dispatch returns
 `OutcomeUnknown`. A complete known callback result wins a cancellation race.
@@ -21,9 +21,6 @@ Context errors expose only normalized `context.Canceled` or
 Policy elapsed or attempt deadlines return bounded `BudgetError` values. Delay
 that cannot fit the remaining elapsed or sleep budget is rejected before
 sleeping.
-
-Legacy `Do` and `CanceledError` retain their v1 cancellation precedence and
-cause formatting for compatibility.
 
 Use both attempt and elapsed budgets for remote calls. A finite attempt count
 alone does not limit a blocked operation.
@@ -35,14 +32,9 @@ attached to the call context. The first physical attempt is admitted as
 original work unless an outer executor already placed an attempt in context.
 Every later retry is admitted as additional work with explicit parent lineage.
 
-Both `github.com/faustbrian/go-resilience` v1.1.0 and
-`github.com/faustbrian/go-resilience/v2` v2.0.0 are supported explicitly. With
-shared-budget mode enabled, `Do` and `DoStrict` select the sole attached version
-once; its own scope, ordinal state, attempt context and permits remain the
-authority throughout the call. They do not convert attempts between versions.
-Contexts carrying both scope versions are refused before operation dispatch
-or budget admission with `BudgetWork` and the `ErrInvalidPolicy` cause.
-A context with neither scope retains the v1 `ErrBudgetScopeRequired` cause.
+Only `github.com/faustbrian/go-resilience/v2` is supported. Its scope, ordinal,
+attempt context and permits remain authoritative throughout execution. Old
+scope contexts are not converted; missing current scopes fail closed.
 Callers own the logical scope and must close it after all nested work finishes.
 Retry completes permits it acquires, but an outer executor retains completion
 ownership of an already attached physical attempt.

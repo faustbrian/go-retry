@@ -8,11 +8,9 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
-	retryotel "github.com/faustbrian/go-retry/v2/adapters/otel"
+	retry "github.com/faustbrian/go-retry/v3"
+	retryotel "github.com/faustbrian/go-retry/v3/adapters/otel"
 
-	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	"github.com/faustbrian/go-retry/v2/retrytelemetry" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
@@ -50,7 +48,7 @@ func TestObserverRecordsExactMetricsUnderSuccessorScope(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatal(err)
 	}
-	if len(collected.ScopeMetrics) != 1 || collected.ScopeMetrics[0].Scope.Name != "github.com/faustbrian/go-retry/v2/adapters/otel" || len(collected.ScopeMetrics[0].Metrics) != 3 {
+	if len(collected.ScopeMetrics) != 1 || collected.ScopeMetrics[0].Scope.Name != "github.com/faustbrian/go-retry/v3/adapters/otel" || len(collected.ScopeMetrics[0].Metrics) != 3 {
 		t.Fatalf("scope metrics = %+v", collected.ScopeMetrics)
 	}
 	for _, measured := range collected.ScopeMetrics[0].Metrics {
@@ -60,7 +58,7 @@ func TestObserverRecordsExactMetricsUnderSuccessorScope(t *testing.T) {
 	}
 }
 
-func TestObserverMetricsMatchLegacyWithExactValuesUnitsAndMappings(t *testing.T) {
+func TestObserverExactValuesUnitsAndMappings(t *testing.T) {
 	t.Parallel()
 
 	classifications := map[retry.Classification]string{
@@ -69,10 +67,9 @@ func TestObserverMetricsMatchLegacyWithExactValuesUnitsAndMappings(t *testing.T)
 	}
 	for classification, want := range classifications {
 		observation := retry.Observation{Attempt: 2, Elapsed: 3 * time.Second, NextDelay: time.Second, Classification: classification}
-		successor := collectSnapshot(t, observation, false)
-		compatibility := collectSnapshot(t, observation, true)
-		if successor.attributes["retry.attempts"]["retry.classification"] != want || !equalMetricContent(successor, compatibility) {
-			t.Fatalf("classification %d successor=%+v legacy=%+v", classification, successor, compatibility)
+		successor := collectSnapshot(t, observation)
+		if successor.attributes["retry.attempts"]["retry.classification"] != want {
+			t.Fatalf("classification %d metrics=%+v", classification, successor)
 		}
 	}
 	reasons := map[retry.Reason]string{
@@ -84,26 +81,14 @@ func TestObserverMetricsMatchLegacyWithExactValuesUnitsAndMappings(t *testing.T)
 	}
 	for reason, want := range reasons {
 		observation := retry.Observation{Attempt: 2, Elapsed: 3 * time.Second, NextDelay: time.Second, Reason: reason}
-		successor := collectSnapshot(t, observation, false)
-		compatibility := collectSnapshot(t, observation, true)
-		if successor.attributes["retry.attempts"]["retry.reason"] != want || !equalMetricContent(successor, compatibility) {
-			t.Fatalf("reason %q successor=%+v legacy=%+v", reason, successor, compatibility)
+		successor := collectSnapshot(t, observation)
+		if successor.attributes["retry.attempts"]["retry.reason"] != want {
+			t.Fatalf("reason %q metrics=%+v", reason, successor)
 		}
 	}
-	unknown := collectSnapshot(t, retry.Observation{Attempt: 2, Elapsed: 3 * time.Second, NextDelay: time.Second, Reason: retry.ReasonOutcomeUnknown}, false)
+	unknown := collectSnapshot(t, retry.Observation{Attempt: 2, Elapsed: 3 * time.Second, NextDelay: time.Second, Reason: retry.ReasonOutcomeUnknown})
 	if unknown.attributes["retry.attempts"]["retry.reason"] != "outcome_unknown" {
 		t.Fatalf("outcome unknown attributes = %v", unknown.attributes)
-	}
-}
-
-func TestLegacyAndStrictLegacyObserversRetainExactScopeAndMetrics(t *testing.T) {
-	t.Parallel()
-
-	observation := retry.Observation{Attempt: 2, Elapsed: 3 * time.Second, NextDelay: time.Second, Classification: retry.ClassificationRetryable, Reason: retry.ReasonSleepBudget}
-	legacy := collectSnapshot(t, observation, true)
-	strictLegacy := collectSnapshot(t, observation, true, true)
-	if legacy.scope != "github.com/faustbrian/go-retry/retrytelemetry" || strictLegacy.scope != legacy.scope || !reflect.DeepEqual(strictLegacy, legacy) {
-		t.Fatalf("legacy=%+v strict legacy=%+v", legacy, strictLegacy)
 	}
 }
 
@@ -189,18 +174,18 @@ func TestObserverInstrumentsAreSynchronousConcurrentReentrantAndPanicTransparent
 	}
 }
 
-func TestDoStrictIsolatesSuccessorOTelInstrumentPanic(t *testing.T) {
+func TestDoIsolatesSuccessorOTelInstrumentPanic(t *testing.T) {
 	t.Parallel()
 
 	observer := newCallbackObserver(t, func(context.Context, int64, ...metric.AddOption) { panic("instrument panic") })
-	policy, err := retry.NewPolicyStrict(retry.Config{
+	policy, err := retry.NewPolicy(retry.Config{
 		Backoff: retry.Constant(0), MaxAttempts: 1, Clock: retry.SystemClock{},
 		Sleeper: retry.SystemSleeper{}, Classifier: retry.RetryableClassifier(), Observer: observer,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		return retry.AttemptResult[string]{Value: "done", Outcome: retry.OutcomeKnown}, nil
 	})
 	if err != nil || result.Value != "done" {
@@ -208,12 +193,12 @@ func TestDoStrictIsolatesSuccessorOTelInstrumentPanic(t *testing.T) {
 	}
 }
 
-func TestDoStrictDeliversReachedOTelObservationAfterCancellationRace(t *testing.T) {
+func TestDoDeliversReachedOTelObservationAfterCancellationRace(t *testing.T) {
 	t.Parallel()
 
 	var calls []string
 	observer := newInstrumentCallbackObserver(t, func(name string) { calls = append(calls, name) })
-	policy, err := retry.NewPolicyStrict(retry.Config{
+	policy, err := retry.NewPolicy(retry.Config{
 		Backoff: retry.Constant(0), MaxAttempts: 1, Clock: retry.SystemClock{},
 		Sleeper: retry.SystemSleeper{}, Classifier: retry.RetryableClassifier(), Observer: observer,
 	})
@@ -221,7 +206,7 @@ func TestDoStrictDeliversReachedOTelObservationAfterCancellationRace(t *testing.
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		cancel()
 		return retry.AttemptResult[string]{Value: "done", Outcome: retry.OutcomeKnown}, nil
 	})
@@ -371,7 +356,7 @@ func TestNewInvokesProviderAndInstrumentConstructorsSynchronously(t *testing.T) 
 func TestSuccessorOTelTypesOwnReflectionIdentity(t *testing.T) {
 	t.Parallel()
 
-	const want = "github.com/faustbrian/go-retry/v2/adapters/otel"
+	const want = "github.com/faustbrian/go-retry/v3/adapters/otel"
 	for _, value := range []any{retryotel.Options{}, retryotel.Observer{}} {
 		if got := reflect.TypeOf(value).PkgPath(); got != want {
 			t.Fatalf("%T PkgPath = %q", value, got)
@@ -444,30 +429,16 @@ type metricSnapshot struct {
 	attributes map[string]map[string]string
 }
 
-func collectSnapshot(t *testing.T, observation retry.Observation, compatibility bool, strictCompatibility ...bool) metricSnapshot {
+func collectSnapshot(t *testing.T, observation retry.Observation) metricSnapshot {
 	t.Helper()
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
-	if compatibility {
-		var observer *retrytelemetry.Observer
-		var err error
-		if len(strictCompatibility) > 0 && strictCompatibility[0] {
-			observer, err = retrytelemetry.NewStrict(retrytelemetry.Options{MeterProvider: provider, PolicyID: "policy"})
-		} else {
-			observer, err = legacyObserver(provider)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		observer.Observe(observation)
-	} else {
-		observer, err := retryotel.New(retryotel.Options{MeterProvider: provider, PolicyID: "policy"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		observer.Observe(observation)
+	observer, err := retryotel.New(retryotel.Options{MeterProvider: provider, PolicyID: "policy"})
+	if err != nil {
+		t.Fatal(err)
 	}
+	observer.Observe(observation)
 	var collected metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatal(err)
@@ -513,10 +484,6 @@ func copyAttributes(target map[string]string, values []attribute.KeyValue) {
 	}
 }
 
-func equalMetricContent(left, right metricSnapshot) bool {
-	return left.scope == "github.com/faustbrian/go-retry/v2/adapters/otel" && right.scope == "github.com/faustbrian/go-retry/retrytelemetry" && reflect.DeepEqual(left.units, right.units) && reflect.DeepEqual(left.values, right.values) && reflect.DeepEqual(left.attributes, right.attributes)
-}
-
 func classificationName(value retry.Classification) string {
 	switch value {
 	case 0:
@@ -539,10 +506,6 @@ func reasonName(value retry.Reason) string {
 	default:
 		return "unknown"
 	}
-}
-
-func legacyObserver(provider metric.MeterProvider) (*retrytelemetry.Observer, error) {
-	return retrytelemetry.New(retrytelemetry.Options{MeterProvider: provider, PolicyID: "policy"})
 }
 
 type callbackCounter struct {

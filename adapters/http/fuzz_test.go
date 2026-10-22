@@ -8,12 +8,10 @@ import (
 	"testing"
 	"time"
 
-	retryhttp "github.com/faustbrian/go-retry/v2/adapters/http"
-	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/v2/retryhttp" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	retryhttp "github.com/faustbrian/go-retry/v3/adapters/http"
 )
 
-// FuzzParseRetryAfterNeverReturnsNegativeDelay checks canonical/flat parity and
+// FuzzParseRetryAfterNeverReturnsNegativeDelay checks raw-input bounds and
 // nonnegative accepted hints at arbitrary representable Unix nanosecond times.
 func FuzzParseRetryAfterNeverReturnsNegativeDelay(f *testing.F) {
 	f.Add("120", int64(0))
@@ -25,24 +23,15 @@ func FuzzParseRetryAfterNeverReturnsNegativeDelay(f *testing.F) {
 	f.Fuzz(func(t *testing.T, value string, unixNano int64) {
 		now := time.Unix(0, unixNano)
 		delay, ok := retryhttp.ParseRetryAfter(value, now)
-		legacyDelay, legacyOK := legacy.ParseRetryAfter(value, now)
-		if delay != legacyDelay || ok != legacyOK {
-			t.Fatalf("successor=(%s,%v) legacy=(%s,%v)", delay, ok, legacyDelay, legacyOK)
-		}
 		if ok && delay < 0 {
 			t.Fatalf("negative accepted delay %s", delay)
 		}
-		options := retryhttp.RetryAfterOptions{MaxBytes: 1024, MaxDeltaSeconds: 2147483647}
-		bounded, boundedOK := retryhttp.ParseRetryAfterWithOptions(value, now, options)
-		if boundedOK && (bounded < 0 || len(value) > 1024) {
-			t.Fatalf("bounded parser admitted invalid input/delay: (%s,%v)", bounded, boundedOK)
+		if len(value) > retryhttp.MaxRetryAfterBytes && ok {
+			t.Fatal("over-limit raw input accepted")
 		}
-		// Native unsigned parsing is an independent oracle for the configured
-		// legacy numeric domain, not for HTTP dates or application delay caps.
-		if seconds, err := strconv.ParseUint(strings.TrimSpace(value), 10, 31); err == nil && len(value) <= 1024 {
-			want := time.Duration(seconds) * time.Second
-			if !boundedOK || bounded != want {
-				t.Fatalf("bounded numeric parse = (%s,%v), want %s", bounded, boundedOK, want)
+		if seconds, err := strconv.ParseUint(strings.TrimSpace(value), 10, 32); err == nil && len(value) <= retryhttp.MaxRetryAfterBytes {
+			if !ok || delay != time.Duration(seconds)*time.Second {
+				t.Fatalf("numeric hint (%v,%v) does not match %d seconds", delay, ok, seconds)
 			}
 		}
 	})

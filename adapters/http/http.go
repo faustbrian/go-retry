@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 const (
@@ -18,9 +18,6 @@ const (
 	MaxRetryStatuses = 900
 	// MaxRetryAfterBytes bounds retained Retry-After metadata.
 	MaxRetryAfterBytes = 128
-	// MaxRetryAfterInputBytes is the hard ceiling for opt-in parsing of a
-	// borrowed header value. It does not widen Error's retained metadata budget.
-	MaxRetryAfterInputBytes = 1 << 20
 )
 
 var defaultRetryStatuses = []int{408, 425, 429, 500, 502, 503, 504}
@@ -156,40 +153,14 @@ func (err *Error) RetryDelay(now time.Time) (time.Duration, bool) {
 // Unsigned decimal seconds and http.ParseTime date formats are accepted; this
 // parser does not sleep, validate operation safety or enforce policy budgets.
 func ParseRetryAfter(value string, now time.Time) (time.Duration, bool) {
-	return ParseRetryAfterWithOptions(value, now, RetryAfterOptions{})
-}
-
-// RetryAfterOptions selects finite input admission for a borrowed header.
-// No header data or options are retained, and no retry policy is executed.
-type RetryAfterOptions struct {
-	// MaxBytes bounds raw input before trimming, from 1 through
-	// MaxRetryAfterInputBytes. Zero retains the 128-byte default.
-	MaxBytes int
-	// MaxDeltaSeconds rejects larger numeric values instead of saturating them.
-	// Zero retains saturation. HTTP dates are not subject to this numeric bound;
-	// callers retain total-delay ceilings and positive-hint policy.
-	MaxDeltaSeconds uint64
-}
-
-// ParseRetryAfterWithOptions parses a header under explicit finite input and
-// numeric limits. Invalid limits or rejected input return (0, false). Accepted
-// zero/past values still return (0, true); accepted delays beyond Duration's
-// range saturate. Zero RetryAfterOptions are equivalent to ParseRetryAfter.
-// Larger byte budgets are opt-in for already-bounded transport inputs, not
-// retained Error metadata. This function owns no transport, retry or clock.
-func ParseRetryAfterWithOptions(value string, now time.Time, options RetryAfterOptions) (time.Duration, bool) {
-	maximumBytes := options.MaxBytes
-	if maximumBytes == 0 {
-		maximumBytes = MaxRetryAfterBytes
-	}
-	if maximumBytes < 1 || maximumBytes > MaxRetryAfterInputBytes || len(value) > maximumBytes {
+	if len(value) > MaxRetryAfterBytes {
 		return 0, false
 	}
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return 0, false
 	}
-	if seconds, ok := parseSeconds(value, options.MaxDeltaSeconds); ok {
+	if seconds, ok := parseSeconds(value); ok {
 		return seconds, true
 	}
 	date, err := http.ParseTime(value)
@@ -199,14 +170,11 @@ func ParseRetryAfterWithOptions(value string, now time.Time, options RetryAfterO
 	return max(date.Sub(now), 0), true
 }
 
-func parseSeconds(value string, maximum uint64) (time.Duration, bool) {
+func parseSeconds(value string) (time.Duration, bool) {
 	if strings.Trim(value, "0123456789") != "" {
 		return 0, false
 	}
 	seconds, err := strconv.ParseUint(value, 10, 64)
-	if maximum > 0 && (err != nil || seconds > maximum) {
-		return 0, false
-	}
 	const maximumSeconds = uint64(math.MaxInt64 / int64(time.Second))
 	if err != nil || seconds > maximumSeconds {
 		return time.Duration(math.MaxInt64), true

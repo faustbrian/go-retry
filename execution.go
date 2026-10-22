@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/faustbrian/go-resilience/v2"
 )
 
 // Reason identifies why execution stopped.
@@ -34,7 +36,7 @@ const (
 )
 
 // Attempt records an unsuccessful dispatch, not a successful operation value.
-// Classified failures retain the original error object; strict unknown/invalid
+// Classified failures retain the original error object; unknown/invalid
 // outcomes retain no error and have zero Classification and Delay.
 type Attempt struct {
 	// Attempt is the one-based physical callback count.
@@ -43,9 +45,9 @@ type Attempt struct {
 	Elapsed time.Duration
 	// Delay is the selected next pause, even if a budget rejects it before sleep.
 	Delay time.Duration
-	// Classification is the accepted result, or zero for unclassified strict outcomes.
+	// Classification is the accepted result, or zero for unclassified outcomes.
 	Classification Classification
-	// Err retains a classified operation error, or nil for unclassified strict outcomes.
+	// Err retains a classified operation error, or nil for unclassified outcomes.
 	// Retained errors are not copied or safe log text.
 	Err error
 }
@@ -62,8 +64,7 @@ type Result struct {
 	// Reason is the terminal category, not a replay-safety decision.
 	Reason Reason
 	// History is the most recent recorded failures, bounded by count.
-	// Legacy Do can share this slice with its terminal error metadata; do not
-	// mutate it if that metadata must remain stable. Error objects remain borrowed.
+	// Terminal metadata defensively copies the slice. Error objects remain borrowed.
 	History []Attempt
 }
 
@@ -107,34 +108,69 @@ type Observation struct {
 }
 
 // ObserveFunc borrows a callback as Observer. A nil function panics on direct
-// invocation; policy construction treats it as an absent optional collaborator.
+// invocation; policy construction rejects explicitly typed-nil collaborators.
 type ObserveFunc func(Observation)
 
 // Observe invokes the adapted function.
 func (function ObserveFunc) Observe(observation Observation) { function(observation) }
 
-// Do executes operation under policy. The caller remains solely responsible
-// for deciding whether repeating operation is safe. ctx must be non-nil;
-// nil policy/operation returns ErrInvalidPolicy. Use a constructed policy.
-// Calls are synchronous without operation-panic recovery. The caller context
-// wins after an operation returns, including when that callback succeeded;
-// failure paths return the zero T and may retain classified errors in history.
-// Its returned History can alias stored terminal metadata; error Result accessors
-// copy their current slice, not the referenced error objects.
-// Attempt deadlines require callback cooperation and do not veto a nil error
-// from an otherwise successful operation. DoStrict differs for known outcomes.
-// Acquired work permits and attempt contexts are released on normal/error/panic
-// exits; side effects are not rolled back and permit completion errors ignored.
-func Do[T any](ctx context.Context, policy *Policy, operation func(context.Context) (T, error)) (T, Result, error) {
-	var zero T
-	if policy == nil || operation == nil {
-		return zero, Result{}, fmt.Errorf("%w: policy and operation are required", ErrInvalidPolicy)
+// ReasonOutcomeUnknown identifies a dispatched operation whose result cannot
+// be proved.
+const ReasonOutcomeUnknown Reason = "outcome_unknown"
+
+// AttemptResult declares the value and side-effect outcome of one attempt.
+type AttemptResult[T any] struct {
+	// Value is returned to the caller only with OutcomeKnown and nil error.
+	Value T
+	// Outcome must be OutcomeKnown, or OutcomeUnknown with a non-nil error.
+	// OutcomeNotDispatched is invalid after invocation; errors alone do not
+	// establish the dispatch outcome.
+	Outcome Outcome
+}
+
+// ExecutionResult contains a value only for known success, bounded retry
+// metadata, and the operation dispatch outcome.
+type ExecutionResult[T any] struct {
+	// Value is set only for known success and otherwise is the zero T.
+	Value T
+	// Retry contains bounded metadata; retained error objects may be private.
+	Retry Result
+	// Outcome identifies dispatch knowledge, never permission to repeat side effects.
+	Outcome Outcome
+}
+
+// Operation executes one attempt and declares whether its outcome is
+// known. It must never label an ambiguous side effect as known or return
+// OutcomeNotDispatched after invocation. Captured state is borrowed; calls
+// execute synchronously and operation panics propagate, with owned cleanup.
+type Operation[T any] func(context.Context) (AttemptResult[T], error)
+
+// Do executes operation under policy without retrying an unknown outcome
+// and returns only bounded human-readable terminal errors. Nil/typed-nil ctx,
+// nil policy or operation returns ErrInvalidPolicy. Use a constructed policy.
+// Known success wins caller/attempt deadline races. Known failures retain
+// timeout and classification precedence before later caller-cancellation checks.
+// Unknown or invalid outcomes
+// terminate without classification, delay selection or retry.
+// Human text is safe by category, not arbitrary cause/history traversal.
+// Collaborators may block or overlap; deadlines are cooperative. Acquired
+// permits and attempt contexts are released, not side effects rolled back.
+// Permit completion errors are ignored and completion/operation panics propagate.
+func Do[T any](ctx context.Context, policy *Policy, operation Operation[T]) (ExecutionResult[T], error) {
+	if nilLike(ctx) || policy == nil || policy.config.MaxAttempts == 0 || operation == nil {
+		return ExecutionResult[T]{}, fmt.Errorf("%w: context, policy, and operation are required", ErrInvalidPolicy)
 	}
+
 	start := policy.config.Clock.Now()
 	result := Result{}
+	if err := ctx.Err(); err != nil {
+		result = finish(policy, start, result, ReasonCanceled)
+		return ExecutionResult[T]{Retry: result, Outcome: OutcomeNotDispatched}, contextError(normalizedContext(err), OutcomeNotDispatched, result)
+	}
+
 	totalSleep := time.Duration(0)
 	previousDelay := time.Duration(0)
-	var undispatchedPermit budgetPermit
+	var undispatchedPermit resilience.Permit
 	defer func() {
 		if undispatchedPermit != nil {
 			_ = undispatchedPermit.Complete()
@@ -142,76 +178,111 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 	}()
 	workCtx, workAttempt, workPermit, workErr := policy.initialWorkContext(ctx)
 	if workErr != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			result = finish(policy, start, result, ReasonCanceled)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeNotDispatched}, contextError(normalizedContext(contextErr), OutcomeNotDispatched, result)
+		}
 		result = finish(policy, start, result, ReasonWorkBudget)
 		observe(policy, Observation{Elapsed: result.Elapsed, Reason: result.Reason})
-		return zero, result, &BudgetError{Kind: BudgetWork, cause: workErr, result: result}
+		safe := singleCause("retry work admission failed", workErr)
+		return ExecutionResult[T]{Retry: result, Outcome: OutcomeNotDispatched}, &BudgetError{Kind: BudgetWork, cause: safe, result: result.clone()}
 	}
 	undispatchedPermit = workPermit
 
-	for index := range policy.config.MaxAttempts {
-		attempt := index + 1
+	for attempt := uint(1); ; attempt++ {
 		if err := ctx.Err(); err != nil {
-			return zero, finish(policy, start, result, ReasonCanceled), &CanceledError{cause: err, result: finish(policy, start, result, ReasonCanceled)}
+			outcome := OutcomeNotDispatched
+			if result.Attempts > 0 {
+				outcome = OutcomeKnown
+			}
+			result = finish(policy, start, result, ReasonCanceled)
+			return ExecutionResult[T]{Retry: result, Outcome: outcome}, contextError(normalizedContext(err), outcome, result)
 		}
 		if policy.config.MaxElapsed > 0 && elapsed(policy, start) >= policy.config.MaxElapsed {
+			outcome := OutcomeNotDispatched
+			if result.Attempts > 0 {
+				outcome = OutcomeKnown
+			}
 			result = finish(policy, start, result, ReasonElapsedBudget)
-			return zero, result, &BudgetError{Kind: BudgetElapsed, cause: context.DeadlineExceeded, result: result}
+			safe := singleCause("retry deadline reached", context.DeadlineExceeded)
+			return ExecutionResult[T]{Retry: result, Outcome: outcome}, &BudgetError{Kind: BudgetElapsed, cause: safe, result: result.clone()}
 		}
 
 		attemptCtx, cancel, attemptBudget := policy.attemptContext(workCtx, start)
-		// Transfer completion ownership only when entering the operation. The
-		// outer defer owns an acquired permit while dispatch is still pending.
+		// Until invocation, the outer defer owns completion. After transfer,
+		// invokeOperation completes the permit even during panic unwinding.
 		dispatchPermit := undispatchedPermit
 		undispatchedPermit = nil
-		value, operationErr, attemptErr := func() (T, error, error) {
-			// Keep cancel outside invokeOperation so permit-completion panic also
-			// unwinds through attempt-context cleanup.
+		attemptResult, operationErr, attemptErr := func() (AttemptResult[T], error, error) {
 			defer cancel()
-			value, err := invokeOperation(attemptCtx, operation, dispatchPermit)
-			return value, err, attemptCtx.Err()
+			result, err := invokeOperation(attemptCtx, operation, dispatchPermit)
+			return result, err, attemptCtx.Err()
 		}()
 		result.Attempts = attempt
 
-		if err := ctx.Err(); err != nil {
-			result = finish(policy, start, result, ReasonCanceled)
-			return zero, result, &CanceledError{cause: err, result: result}
+		if invalidOutcome(attemptResult.Outcome, operationErr) {
+			result = appendHistory(policy, result, Attempt{Attempt: attempt, Elapsed: elapsed(policy, start)})
+			result = finish(policy, start, result, ReasonOutcomeUnknown)
+			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Reason: ReasonOutcomeUnknown})
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeUnknown}, fmt.Errorf("%w: operation returned an invalid outcome", ErrInvalidPolicy)
+		}
+		if attemptResult.Outcome == OutcomeUnknown {
+			result = appendHistory(policy, result, Attempt{Attempt: attempt, Elapsed: elapsed(policy, start)})
+			result = finish(policy, start, result, ReasonOutcomeUnknown)
+			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Reason: ReasonOutcomeUnknown})
+			executionResult := ExecutionResult[T]{Retry: result, Outcome: OutcomeUnknown}
+			kind := unknownContextKind(ctx, operationErr)
+			if kind != nil {
+				return executionResult, contextError(kind, OutcomeUnknown, result)
+			}
+			return executionResult, outcomeError{}
 		}
 		if operationErr == nil {
 			result = finish(policy, start, result, ReasonSucceeded)
 			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Reason: result.Reason})
-			return value, result, nil
+			return ExecutionResult[T]{Value: attemptResult.Value, Retry: result, Outcome: OutcomeKnown}, nil
 		}
-		if attemptErr != nil && errors.Is(attemptErr, context.DeadlineExceeded) {
+		if attemptErr != nil && errors.Is(attemptErr, context.DeadlineExceeded) && ctx.Err() == nil {
 			reason := ReasonAttemptBudget
 			if attemptBudget == BudgetElapsed {
 				reason = ReasonElapsedBudget
 			}
 			result = finish(policy, start, result, reason)
-			return zero, result, &BudgetError{Kind: attemptBudget, cause: errors.Join(operationErr, context.DeadlineExceeded), result: result}
+			safe := multipleCauses("retry attempt timed out", operationErr, context.DeadlineExceeded)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: attemptBudget, cause: safe, result: result.clone()}
 		}
 
-		classification, classifierErr := classify(ctx, policy.config.Classifier, operationErr)
+		classification, classifierPanicked, classifierErr := classify(ctx, policy.config.Classifier, operationErr)
+		if classifierPanicked {
+			result = finish(policy, start, result, ReasonClassifierFailure)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, fmt.Errorf("%w: classifier panicked", ErrInvalidPolicy)
+		}
 		if classifierErr != nil {
 			result = finish(policy, start, result, ReasonClassifierFailure)
-			return zero, result, &PermanentError{Cause: errors.Join(operationErr, classifierErr)}
+			safe := multipleCauses("retry classifier failed", operationErr, classifierErr)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &PermanentError{Cause: safe}
 		}
 		if classification != ClassificationRetryable && classification != ClassificationPermanent {
 			result = finish(policy, start, result, ReasonClassifierFailure)
-			return zero, result, &PermanentError{Cause: strictSingleCause("retry classifier returned invalid classification", operationErr)}
+			safe := singleCause("retry classifier failed", operationErr)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &PermanentError{Cause: safe}
 		}
 		entry := Attempt{Attempt: attempt, Elapsed: elapsed(policy, start), Classification: classification, Err: operationErr}
 		if classification == ClassificationPermanent {
 			result = appendHistory(policy, result, entry)
 			result = finish(policy, start, result, ReasonPermanent)
 			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Classification: classification, Reason: result.Reason})
-			return zero, result, &PermanentError{Cause: operationErr}
+			safe := singleCause("retry operation failed", operationErr)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &PermanentError{Cause: safe}
 		}
 		if attempt == policy.config.MaxAttempts {
 			result = appendHistory(policy, result, entry)
 			result = finish(policy, start, result, ReasonAttemptsExhausted)
+			safe := singleCause("retry operation failed", operationErr)
 			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Classification: classification, Reason: result.Reason})
-			return zero, result, &ExhaustedError{cause: operationErr, result: result}
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &ExhaustedError{cause: safe, result: result.clone()}
 		}
+
 		delay := policy.delay(attempt, previousDelay)
 		var hint DelayHint
 		if errors.As(operationErr, &hint) {
@@ -225,42 +296,104 @@ func Do[T any](ctx context.Context, policy *Policy, operation func(context.Conte
 		currentElapsed := elapsed(policy, start)
 		if policy.config.MaxElapsed > 0 && (currentElapsed >= policy.config.MaxElapsed || delay > policy.config.MaxElapsed-currentElapsed) {
 			result = finish(policy, start, result, ReasonElapsedBudget)
-			return zero, result, &BudgetError{Kind: BudgetElapsed, cause: operationErr, result: result}
+			safe := singleCause("retry operation failed", operationErr)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetElapsed, cause: safe, result: result.clone()}
 		}
 		if policy.config.MaxSleep > 0 && (totalSleep >= policy.config.MaxSleep || delay > policy.config.MaxSleep-totalSleep) {
 			result = finish(policy, start, result, ReasonSleepBudget)
-			return zero, result, &BudgetError{Kind: BudgetSleep, cause: operationErr, result: result}
+			safe := singleCause("retry operation failed", operationErr)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetSleep, cause: safe, result: result.clone()}
 		}
 		observe(policy, Observation{Attempt: attempt, Elapsed: currentElapsed, NextDelay: delay, Classification: classification})
 		if err := policy.config.Sleeper.Sleep(ctx, delay); err != nil {
-			if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if kind := sleeperContextKind(ctx, err); kind != nil {
 				result = finish(policy, start, result, ReasonCanceled)
-				return zero, result, &CanceledError{cause: err, result: result}
+				return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, contextError(kind, OutcomeKnown, result)
 			}
 			result = finish(policy, start, result, ReasonSleeperFailure)
-			return zero, result, &PermanentError{Cause: err}
+			safe := singleCause("retry sleeper failed", err)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &PermanentError{Cause: safe}
+		}
+		if err := ctx.Err(); err != nil {
+			result = finish(policy, start, result, ReasonCanceled)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, contextError(normalizedContext(err), OutcomeKnown, result)
 		}
 		totalSleep = saturatingAdd(totalSleep, delay)
 		previousDelay = delay
 		nextWorkCtx, nextWorkAttempt, nextWorkPermit, admissionErr := policy.retryWorkContext(ctx, workAttempt)
 		if admissionErr != nil {
+			if contextErr := ctx.Err(); contextErr != nil {
+				result = finish(policy, start, result, ReasonCanceled)
+				return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, contextError(normalizedContext(contextErr), OutcomeKnown, result)
+			}
 			result = finish(policy, start, result, ReasonWorkBudget)
 			observe(policy, Observation{Attempt: attempt, Elapsed: result.Elapsed, Classification: classification, Reason: result.Reason})
-			return zero, result, &BudgetError{Kind: BudgetWork, cause: admissionErr, result: result}
+			safe := singleCause("retry work admission failed", admissionErr)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetWork, cause: safe, result: result.clone()}
 		}
 		workCtx = nextWorkCtx
 		workAttempt = nextWorkAttempt
 		undispatchedPermit = nextWorkPermit
 	}
 
-	return zero, result, fmt.Errorf("%w: retry loop ended without a terminal result", ErrInvalidPolicy)
 }
 
-func invokeOperation[T any](ctx context.Context, operation func(context.Context) (T, error), permit budgetPermit) (value T, err error) {
+func invokeOperation[T any](ctx context.Context, operation Operation[T], permit resilience.Permit) (result AttemptResult[T], err error) {
 	if permit != nil {
 		defer func() { _ = permit.Complete() }()
 	}
 	return operation(ctx)
+}
+
+// Once a callback was invoked, NotDispatched cannot be its result. Unknown
+// without failure cannot explain why success is unavailable.
+func invalidOutcome(outcome Outcome, err error) bool {
+	return outcome == OutcomeNotDispatched || (outcome == OutcomeUnknown && err == nil) || outcome > OutcomeUnknown
+}
+
+func classify(ctx context.Context, classifier Classifier, err error) (classification Classification, panicked bool, classifierErr error) {
+	defer func() {
+		if recover() != nil {
+			classification = 0
+			classifierErr = nil
+			panicked = true
+		}
+	}()
+	classification, classifierErr = classifier.Classify(ctx, err)
+	return classification, false, classifierErr
+}
+
+func normalizedContext(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return context.Canceled
+}
+
+func unknownContextKind(ctx context.Context, err error) error {
+	if contextErr := ctx.Err(); contextErr != nil {
+		return normalizedContext(contextErr)
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func sleeperContextKind(ctx context.Context, err error) error {
+	if contextErr := ctx.Err(); contextErr != nil {
+		return normalizedContext(contextErr)
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 func elapsed(policy *Policy, start time.Time) time.Duration {
@@ -288,19 +421,6 @@ func appendHistory(policy *Policy, result Result, attempt Attempt) Result {
 	}
 	result.History = append(result.History, attempt)
 	return result
-}
-
-func classify(ctx context.Context, classifier Classifier, err error) (classification Classification, classifierErr error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			if cause, ok := recovered.(error); ok {
-				classifierErr = strictSingleCause("retry classifier panicked", cause)
-			} else {
-				classifierErr = errors.New("retry classifier panicked")
-			}
-		}
-	}()
-	return classifier.Classify(ctx, err)
 }
 
 func observe(policy *Policy, observation Observation) {

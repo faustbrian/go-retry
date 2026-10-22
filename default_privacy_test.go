@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 func TestDefaultMarkersDoNotFormatPrivateCause(t *testing.T) {
@@ -58,14 +58,26 @@ func TestDefaultDoTerminalErrorsDoNotFormatPrivateCause(t *testing.T) {
 			}
 			policy := mustPolicy(t, config)
 			calls := 0
-			value, result, err := retry.Do(ctx, policy, func(context.Context) (string, error) {
+			execution9, executionError9 := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				calls++
-				return "", operationErr
+				return retry.AttemptResult[string]{Value: "", Outcome: retry.OutcomeKnown}, operationErr
 			})
+			value, result, err := execution9.Value, execution9.Retry, executionError9
+
 			if value != "" || result.Reason != wantReason || (name == "canceled" && calls != 0) || (name != "canceled" && calls != 1) {
 				t.Fatalf("value=%q reason=%q calls=%d", value, result.Reason, calls)
 			}
-			assertDefaultPrivateError(t, err, cause, category)
+			if name == "canceled" || name == "panicking classifier" {
+				kind := error(context.Canceled)
+				if name == "panicking classifier" {
+					kind = retry.ErrInvalidPolicy
+				}
+				if err == nil || !errors.Is(err, kind) || errors.Is(err, cause) || cause.calls != 0 || strings.Contains(err.Error(), "application-private") || len(err.Error()) > retry.MaxTerminalErrorBytes {
+					t.Fatal("normalized failure disclosed arbitrary cause")
+				}
+			} else {
+				assertDefaultPrivateError(t, err, cause, category)
+			}
 		})
 	}
 }
@@ -76,19 +88,6 @@ func TestBudgetErrorDoesNotRenderCallerSuppliedKind(t *testing.T) {
 	if strings.Contains(text, "application-private") || !strings.Contains(text, "budget") {
 		t.Fatalf("unsafe budget category %q", text)
 	}
-}
-
-func TestDoClassifierPanicCauseIsExplicitMachineDiagnostic(t *testing.T) {
-	operationCause := errors.New("operation")
-	panicCause := &privateDefaultCause{}
-	clock := newManualClock(time.Unix(710, 0))
-	config := baseConfig(clock, retry.Config{})
-	config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { panic(panicCause) })
-	_, result, err := retry.Do(context.Background(), mustPolicy(t, config), func(context.Context) (string, error) { return "", operationCause })
-	if result.Reason != retry.ReasonClassifierFailure || !errors.Is(err, operationCause) {
-		t.Fatal("classifier failure lost operation classification")
-	}
-	assertDefaultPrivateError(t, err, panicCause, "permanent")
 }
 
 type privateDefaultCause struct{ calls int }

@@ -16,7 +16,7 @@ api:
   baselines:
     - module: .
       mode: go-doc
-      path: api/baseline.txt
+      path: api/baseline-v3.txt
       packages:
         - .
         - ./adapters/http
@@ -24,17 +24,13 @@ api:
         - ./adapters/postgres
         - ./adapters/slog
         - ./retryadapter
-        - ./retryhttp
-        - ./retrylog
-        - ./retrypgx
-        - ./retrytelemetry
 operations:
   - module: .
     gate: local-test
     steps:
       - type: go-test
         packages: ["."]
-        run: '^Test(PolicyIsSafeForConcurrentExecution|StrictPolicyIsSafeForConcurrentExecution|DoStrictCompletesPermitWhenCancellationLandsAfterAdmission|SystemSleeperCompletesTimerAndInFlightCancellation)$'
+        run: '^Test(PolicyIsSafeForConcurrentExecution|DoCompletesPermitWhenCancellationLandsAfterAdmission|SystemSleeperCompletesTimerAndInFlightCancellation)$'
         race: true
         count: 1
         timeout: 2m
@@ -43,7 +39,7 @@ operations:
     steps:
       - type: go-test
         packages: ["."]
-        run: '^(TestNoPackageBackgroundWorkers|TestDoStrictStartsNoBackgroundWorkers)$'
+        run: '^TestDoStartsNoBackgroundWorkers$'
         count: 10
         timeout: 20m
   - module: .
@@ -74,11 +70,6 @@ operations:
       - type: go-test
         packages: ["./adapters/http"]
         fuzz: '^FuzzNewErrorBoundsResponseMetadata$'
-        budget: 2s
-        timeout: 2m
-      - type: go-test
-        packages: ["./retryhttp"]
-        fuzz: '^FuzzParseRetryAfterNeverReturnsNegativeDelay$'
         budget: 2s
         timeout: 2m
   - module: .

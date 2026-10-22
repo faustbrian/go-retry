@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
-func TestDoStrictCollaboratorsAreBlockingConcurrentAndReentrant(t *testing.T) {
+func TestDoCollaboratorsAreBlockingConcurrentAndReentrant(t *testing.T) {
 	roles := []string{"backoff", "clock", "timeout clock", "random", "sleeper", "classifier", "delay hint", "observer"}
 	for _, role := range roles {
 		t.Run(role+" blocking concurrent", func(t *testing.T) {
@@ -70,7 +70,7 @@ func TestDoStrictCollaboratorsAreBlockingConcurrentAndReentrant(t *testing.T) {
 	}
 }
 
-func TestDoStrictCollaboratorPanicRules(t *testing.T) {
+func TestDoCollaboratorPanicRules(t *testing.T) {
 	want := errors.New("collaborator panic")
 	for _, role := range []string{"backoff", "clock", "timeout clock", "random", "sleeper", "delay hint"} {
 		t.Run(role, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestDoStrictCollaboratorPanicRules(t *testing.T) {
 	})
 }
 
-func TestDoStrictDoesNotPreemptEnteredCollaborators(t *testing.T) {
+func TestDoDoesNotPreemptEnteredCollaborators(t *testing.T) {
 	for _, role := range []string{"backoff", "clock", "timeout clock", "random", "sleeper", "classifier", "delay hint", "observer"} {
 		t.Run(role, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -178,7 +178,7 @@ func newStrictCollaboratorRunner(t *testing.T, role string, hook func()) func(co
 	})
 	return func(ctx context.Context) error {
 		calls := 0
-		_, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+		_, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 			calls++
 			if calls == 1 {
 				if role == "delay hint" {

@@ -12,11 +12,8 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
-	retryhttp "github.com/faustbrian/go-retry/v2/adapters/http"
-
-	//lint:ignore SA1019 Legacy parity is the compatibility contract under test.
-	legacy "github.com/faustbrian/go-retry/v2/retryhttp" //nolint:staticcheck // Legacy parity is the compatibility contract under test.
+	retry "github.com/faustbrian/go-retry/v3"
+	retryhttp "github.com/faustbrian/go-retry/v3/adapters/http"
 )
 
 func TestNewValidatesRetryStatusesDeterministically(t *testing.T) {
@@ -220,16 +217,23 @@ func TestClassifierRecognizesSuccessorBeforeTransientCallback(t *testing.T) {
 	assertHTTPClassification(t, classifier, want, retry.ClassificationPermanent)
 }
 
-func TestParseRetryAfterMatchesLegacyAndSaturates(t *testing.T) {
+func TestParseRetryAfterUsesCanonicalValuesAndSaturates(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
-	values := []string{"120", " 5 ", "Sun, 19 Jul 2026 12:02:00 GMT", "Sun, 19 Jul 2026 11:59:00 GMT", "", "-1", "1.5", strings.Repeat("9", 100)}
-	for _, value := range values {
-		got, ok := retryhttp.ParseRetryAfter(value, now)
-		legacyGot, legacyOK := legacy.ParseRetryAfter(value, now)
-		if got != legacyGot || ok != legacyOK || (ok && got < 0) {
-			t.Fatalf("ParseRetryAfter(%q) = (%s,%v), legacy=(%s,%v)", value, got, ok, legacyGot, legacyOK)
+	for _, test := range []struct {
+		value    string
+		delay    time.Duration
+		accepted bool
+	}{
+		{"120", 120 * time.Second, true}, {" 5 ", 5 * time.Second, true},
+		{"Sun, 19 Jul 2026 12:02:00 GMT", 120 * time.Second, true},
+		{"Sun, 19 Jul 2026 11:59:00 GMT", 0, true}, {"", 0, false}, {"-1", 0, false}, {"1.5", 0, false},
+		{strings.Repeat("9", 100), time.Duration(math.MaxInt64), true},
+	} {
+		got, ok := retryhttp.ParseRetryAfter(test.value, now)
+		if got != test.delay || ok != test.accepted {
+			t.Fatalf("parse %q = (%v,%v), want (%v,%v)", test.value, got, ok, test.delay, test.accepted)
 		}
 	}
 	if got, ok := retryhttp.ParseRetryAfter(strings.Repeat("9", 100), now); !ok || got != time.Duration(math.MaxInt64) {
@@ -246,7 +250,7 @@ func TestParseRetryAfterMatchesLegacyAndSaturates(t *testing.T) {
 func TestSuccessorTypesOwnTheirReflectionIdentity(t *testing.T) {
 	t.Parallel()
 
-	const want = "github.com/faustbrian/go-retry/v2/adapters/http"
+	const want = "github.com/faustbrian/go-retry/v3/adapters/http"
 	for _, value := range []any{retryhttp.Options{}, retryhttp.Classifier{}, retryhttp.Error{}} {
 		if got := reflect.TypeOf(value).PkgPath(); got != want {
 			t.Fatalf("%T PkgPath = %q", value, got)

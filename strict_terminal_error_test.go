@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-resilience"
-	retry "github.com/faustbrian/go-retry/v2"
+	"github.com/faustbrian/go-resilience/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 func TestContextErrorZeroAndNilReceiversAreTotal(t *testing.T) {
@@ -32,7 +32,7 @@ func TestContextErrorResultIsDefensive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	clock := newManualClock(time.Unix(100, 0))
 	policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
-	result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		cancel()
 		return retry.AttemptResult[string]{Outcome: retry.OutcomeUnknown}, errors.New("ambiguous")
 	})
@@ -49,14 +49,14 @@ func TestContextErrorResultIsDefensive(t *testing.T) {
 	}
 }
 
-func TestDoStrictKnownFailuresRetryAndWinCancellationRace(t *testing.T) {
+func TestDoKnownFailuresRetryAndWinCancellationRace(t *testing.T) {
 	t.Parallel()
 
 	t.Run("known retry then success", func(t *testing.T) {
 		clock := newManualClock(time.Unix(100, 0))
 		policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
 		calls := 0
-		result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 			calls++
 			if calls == 1 {
 				return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
@@ -77,7 +77,7 @@ func TestDoStrictKnownFailuresRetryAndWinCancellationRace(t *testing.T) {
 			return retry.ClassificationPermanent, nil
 		})
 		policy := mustStrictPolicy(t, config)
-		result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 			cancel()
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, cause
 		})
@@ -88,7 +88,7 @@ func TestDoStrictKnownFailuresRetryAndWinCancellationRace(t *testing.T) {
 	})
 }
 
-func TestDoStrictKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) {
+func TestDoKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) {
 	t.Parallel()
 
 	cause := &hostileStrictError{marker: strings.Repeat("secret", 200000)}
@@ -149,10 +149,10 @@ func TestDoStrictKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) 
 				config := test.config(clock)
 				config.HistoryLimit = historyLimit
 				policy := mustStrictPolicy(t, config)
-				result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+				result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 					return retry.AttemptResult[string]{Value: "discarded", Outcome: retry.OutcomeKnown}, cause
 				})
-				if err == nil || err.Error() != test.wantText || len(err.Error()) > retry.MaxStrictTerminalErrorBytes || strings.Contains(err.Error(), "secret") || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != test.wantReason {
+				if err == nil || err.Error() != test.wantText || len(err.Error()) > retry.MaxTerminalErrorBytes || strings.Contains(err.Error(), "secret") || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != test.wantReason {
 					t.Fatalf("result=%+v err=%v", result, err)
 				}
 				wantHistory := 0
@@ -196,20 +196,20 @@ func TestDoStrictKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) 
 					if !errors.As(err, &typed) || !equalRetryResult(typed.Result(), result.Retry) {
 						t.Fatalf("error type/result = %T", err)
 					}
-					assertDefensiveStrictResult(t, typed.Result, result.Retry)
+					assertDefensiveResult(t, typed.Result, result.Retry)
 				case "budget":
 					var typed *retry.BudgetError
 					if !errors.As(err, &typed) || typed.Kind != test.wantKind || !equalRetryResult(typed.Result(), result.Retry) {
 						t.Fatalf("error type/kind/result = %T %+v", err, typed)
 					}
-					assertDefensiveStrictResult(t, typed.Result, result.Retry)
+					assertDefensiveResult(t, typed.Result, result.Retry)
 				}
 			}
 		})
 	}
 }
 
-func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
+func TestDoAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 	t.Parallel()
 
 	cause := &hostileTimeoutError{marker: strings.Repeat("timeout-secret", 100000)}
@@ -219,7 +219,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 		Clock: clock, Sleeper: advancingSleeper{clock.manualClock},
 		Classifier: retry.RetryableClassifier(),
 	})
-	result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, cause
 	})
 	var budget *retry.BudgetError
@@ -238,7 +238,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 		Clock: elapsedClock, Sleeper: advancingSleeper{elapsedClock.manualClock},
 		Classifier: retry.RetryableClassifier(),
 	})
-	result, err = retry.DoStrict(context.Background(), elapsedPolicy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err = retry.Do(context.Background(), elapsedPolicy, func(context.Context) (retry.AttemptResult[string], error) {
 		return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, cause
 	})
 	if !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || err.Error() != "retry elapsed budget exhausted" || result.Retry.Reason != retry.ReasonElapsedBudget {
@@ -247,7 +247,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 	if !equalRetryResult(budget.Result(), result.Retry) {
 		t.Fatalf("elapsed attempt budget result=%+v", budget.Result())
 	}
-	assertDefensiveStrictResult(t, budget.Result, result.Retry)
+	assertDefensiveResult(t, budget.Result, result.Retry)
 	assertStrictCarrier(t, err, []error{cause, context.DeadlineExceeded})
 	assertStrictTypedCauses(t, err, []error{cause})
 
@@ -257,7 +257,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 		Sleeper: advancingSleeper{plainClock}, Classifier: retry.RetryableClassifier(),
 		UseResilienceBudget: true,
 	})
-	result, err = retry.DoStrict(context.Background(), workPolicy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err = retry.Do(context.Background(), workPolicy, func(context.Context) (retry.AttemptResult[string], error) {
 		t.Fatal("operation dispatched without work scope")
 		return retry.AttemptResult[string]{}, nil
 	})
@@ -270,7 +270,7 @@ func TestDoStrictAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 	assertStrictCarrier(t, err, []error{resilience.ErrBudgetScopeRequired})
 }
 
-func TestDoStrictUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
+func TestDoUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 	t.Parallel()
 
 	for _, budgetKind := range []retry.BudgetKind{retry.BudgetElapsed, retry.BudgetSleep} {
@@ -289,7 +289,7 @@ func TestDoStrictUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 				config.MaxSleep = 2 * time.Second
 			}
 			policy := mustStrictPolicy(t, config)
-			result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+			result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 				return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, hinted
 			})
 			var budget *retry.BudgetError
@@ -299,12 +299,12 @@ func TestDoStrictUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 				wantReason = retry.ReasonSleepBudget
 				wantText = "retry sleep budget exhausted"
 			}
-			if hinted.calls != 1 || !errors.As(err, &budget) || budget.Kind != budgetKind || !errors.Is(err, hinted) || err.Error() != wantText || len(err.Error()) > retry.MaxStrictTerminalErrorBytes || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != wantReason || result.Retry.FinalDelay != 3*time.Second || len(result.Retry.History) != int(historyLimit) || !equalRetryResult(budget.Result(), result.Retry) {
+			if hinted.calls != 1 || !errors.As(err, &budget) || budget.Kind != budgetKind || !errors.Is(err, hinted) || err.Error() != wantText || len(err.Error()) > retry.MaxTerminalErrorBytes || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != wantReason || result.Retry.FinalDelay != 3*time.Second || len(result.Retry.History) != int(historyLimit) || !equalRetryResult(budget.Result(), result.Retry) {
 				t.Fatalf("kind=%s history=%d calls=%d result=%+v err=%v", budgetKind, historyLimit, hinted.calls, result, err)
 			}
 			assertStrictCarrier(t, err, []error{hinted})
 			assertStrictTypedCauses(t, err, []error{hinted})
-			assertDefensiveStrictResult(t, budget.Result, result.Retry)
+			assertDefensiveResult(t, budget.Result, result.Retry)
 			if historyLimit > 0 {
 				entry := result.Retry.History[0]
 				//nolint:errorlint // History must retain the exact delay-hint error.
@@ -316,7 +316,7 @@ func TestDoStrictUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 	}
 }
 
-func TestDoStrictClassifierPanicIsSanitized(t *testing.T) {
+func TestDoClassifierPanicIsSanitized(t *testing.T) {
 	t.Parallel()
 
 	clock := newManualClock(time.Unix(100, 0))
@@ -329,30 +329,11 @@ func TestDoStrictClassifierPanicIsSanitized(t *testing.T) {
 	config.Observer = retry.ObserveFunc(func(retry.Observation) { observations++ })
 	policy := mustStrictPolicy(t, config)
 	calls := 0
-	result, err := retry.DoStrict(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		calls++
 		return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, operationErr
 	})
 	if calls != 1 || observations != 0 || err == nil || err.Error() != "invalid retry policy: classifier panicked" || !errors.Is(err, retry.ErrInvalidPolicy) || errors.Is(err, operationErr) || strings.Contains(err.Error(), "secret") || result.Outcome != retry.OutcomeKnown || result.Retry.Attempts != 1 || result.Retry.Reason != retry.ReasonClassifierFailure {
-		t.Fatalf("result=%+v err=%v", result, err)
-	}
-}
-
-func TestDoClassifierPanicKeepsOperationCauseWithoutPanicText(t *testing.T) {
-	t.Parallel()
-
-	clock := newManualClock(time.Unix(100, 0))
-	operationErr := errors.New("legacy operation")
-	config := baseConfig(clock, retry.Config{})
-	config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) {
-		panic("legacy classifier panic")
-	})
-	policy := mustPolicy(t, config)
-	_, result, err := retry.Do(context.Background(), policy, func(context.Context) (string, error) {
-		return "", operationErr
-	})
-	var permanent *retry.PermanentError
-	if !errors.As(err, &permanent) || !errors.Is(err, operationErr) || err.Error() != "permanent error" || result.Attempts != 1 || result.Reason != retry.ReasonClassifierFailure {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
@@ -423,7 +404,7 @@ func assertStrictCarrier(t *testing.T, err error, causes []error) {
 		t.Fatal("terminal wrapper has no safe carrier")
 	}
 	// The owned carrier stays safe to render even after explicit unwrapping.
-	if text := outer.Error(); !strings.HasPrefix(text, "retry ") || len(text) > retry.MaxStrictTerminalErrorBytes || strings.Contains(text, "secret") {
+	if text := outer.Error(); !strings.HasPrefix(text, "retry ") || len(text) > retry.MaxTerminalErrorBytes || strings.Contains(text, "secret") {
 		t.Fatalf("safe carrier diagnostic = %q", text)
 	}
 	if len(causes) == 1 {
@@ -484,7 +465,7 @@ func assertStrictTypedCauses(t *testing.T, err error, causes []error) {
 	}
 }
 
-func assertDefensiveStrictResult(t *testing.T, get func() retry.Result, want retry.Result) {
+func assertDefensiveResult(t *testing.T, get func() retry.Result, want retry.Result) {
 	t.Helper()
 	first := get()
 	if len(first.History) == 0 {

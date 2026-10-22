@@ -5,10 +5,9 @@
 
 Observers receive attempt number, elapsed time, selected next delay,
 classification, and terminal reason. They never receive operation values or
-error messages. Calling an observer directly propagates sink panics. `Do` and
-`DoStrict` isolate observer panics so observation cannot replace an execution
-result. Blocking still blocks execution; neither variant forcibly interrupts
-a callback or contains runtime.Goexit. Events are not emitted at every terminal
+error messages. Calling an observer directly propagates sink panics. `Do` isolates observer panics so observation cannot replace an execution
+result. Blocking still blocks execution; the executor does not forcibly interrupt
+a callback or contain `runtime.Goexit`. Events are not emitted at every terminal
 path, and early work admission failure can report attempt zero. retry.attempts
 increments once per notification, not once per guaranteed physical dispatch.
 
@@ -24,12 +23,10 @@ Direct slog and OpenTelemetry sink calls run synchronously with
 blocking blocks the caller, separate calls may invoke a sink concurrently, and
 sink panics propagate to the direct caller. The adapters retain neither an
 observation nor sink arguments after the call returns. Executing through `Do`
-or `DoStrict` adds the engine's observer-panic isolation described above.
+adds the engine's observer-panic isolation described above.
 
-The successor OTel scope is
-`github.com/faustbrian/go-retry/v2/adapters/otel`. The compatibility
-`retrytelemetry` package retains its original
-`github.com/faustbrian/go-retry/retrytelemetry` scope across the v2 upgrade.
+The OTel scope is `github.com/faustbrian/go-retry/v3/adapters/otel`. Former
+observer packages and scopes are removed; migrate selectors with consumers.
 The caller creates, owns,
 flushes, and shuts down the logger or meter provider after all synchronous
 observer calls finish.

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 func TestJitterMeansRemainUnbiasedWithDeterministicSource(t *testing.T) {

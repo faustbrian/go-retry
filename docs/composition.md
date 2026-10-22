@@ -29,16 +29,12 @@ the shared scope for a new additional-work permit. This changes the upper bound
 from an accidental `(retries + 1) * (hedges + 1)` to the original attempt plus
 the configured shared additional-work allowance.
 
-The selected scope version must also be supported by every nested executor.
-Retry supports v1 and v2 explicitly; this does not imply v2 support in Hedge
-or another executor. Retain a v1-scoped stack until every participant supports
-v2, then move the entire logical execution to one v2 scope. Attaching both
-versions is not a migration bridge: Retry refuses that configuration before
-physical work when shared-budget mode is enabled.
+Every nested executor must use the current Resilience v2 scope. Migrate the
+whole logical execution together; Retry does not bridge old scope generations.
 
 ## Collaborator ownership
 
-`NewPolicyStrict` copies the `Config` value and its scalar bounds. Mutating the
+`NewPolicy` copies the `Config` value and its scalar bounds. Mutating the
 original config after construction does not reconfigure the policy. The
 configured `Backoff`, `Clock`, `Sleeper`, `Random`, `Classifier`, and `Observer`
 values remain caller-owned references borrowed for the policy's lifetime. A
@@ -57,8 +53,8 @@ terminal safe-cause carrier and, on the documented released rows, through
 bounded `Result.History`.
 `Clock.Now`, `Backoff.Delay`, and `Random.Int64n` have no cancellation input;
 `TimeoutClock.WithTimeout`, `Sleeper.Sleep`, and `Classifier.Classify` receive
-the documented execution context. Panics propagate except that `DoStrict`
-sanitizes classifier panics and both `Do` and `DoStrict` isolate observer
+the documented execution context. Panics propagate except that `Do`
+sanitizes classifier panics and isolates observer
 panics. A retryable error's `DelayHint.RetryDelay` is called at most once and
 has no cancellation input. Every admitted work permit is completed exactly
 once: after the dispatched operation, or before return when cancellation, an
@@ -79,13 +75,13 @@ The integration adapters follow the same rule for retained references:
 `adapters/http.NewError` copies the bounded `Retry-After` string instead of
 retaining the header map. Its optional transient callback is retained for the
 classifier lifetime and receives the exact borrowed error synchronously, at
-most once, only after successor-error recognition misses. The classifier
+most once, only after canonical-error recognition misses. The classifier
 retains neither that error nor the callback result and holds no lock across the
 call, so re-entry is allowed, blocking blocks the caller, separate calls may
 invoke it concurrently, and panics propagate. The callback has no context
 parameter, so caller cancellation cannot preempt an invocation already in
 progress.
 
-Operation functions passed to `DoStrict` are borrowed only for that call and
+Operation functions passed to `Do` are borrowed only for that call and
 invoked once per dispatched attempt with the attempt context. The package
 starts no background work and does not invoke them after return.

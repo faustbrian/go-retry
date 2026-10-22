@@ -5,7 +5,7 @@
 
 Ordinary development starts with `go test ./...` or a focused test selector.
 `make check` and `make ci` use the public verifier declared in `.golib.yaml`
-for bounded local checks, including one named race selection for legacy/strict
+for bounded local checks, including one named race selection for canonical
 concurrent execution, cancellation-time permit completion and sleeper lifecycle.
 Documentation changes need relevant structure, links and examples, not unrelated
 runtime work. Applicable security checks and fail-closed required results remain

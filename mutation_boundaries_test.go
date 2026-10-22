@@ -197,10 +197,12 @@ func TestExactElapsedAndSleepBudgets(t *testing.T) {
 			Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 		})
 		calls := 0
-		_, result, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
+		execution24, executionError24 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 			calls++
-			return struct{}{}, Retryable(errors.New("temporary"))
+			return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 		})
+		_, result, err := execution24.Value, execution24.Retry, executionError24
+
 		var budget *BudgetError
 		if !errors.As(err, &budget) || budget.Kind != BudgetElapsed || calls != 2 || len(sleeper.delays) != 2 || result.Attempts != 2 {
 			t.Fatalf("elapsed boundary: calls=%d sleeps=%v result=%+v error=%v", calls, sleeper.delays, result, err)
@@ -215,10 +217,12 @@ func TestExactElapsedAndSleepBudgets(t *testing.T) {
 			Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 		})
 		calls := 0
-		_, result, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
+		execution25, executionError25 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 			calls++
-			return struct{}{}, Retryable(errors.New("temporary"))
+			return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 		})
+		_, result, err := execution25.Value, execution25.Retry, executionError25
+
 		var budget *BudgetError
 		if !errors.As(err, &budget) || budget.Kind != BudgetSleep || calls != 3 || len(sleeper.delays) != 2 || result.Attempts != 3 {
 			t.Fatalf("sleep boundary: calls=%d sleeps=%v result=%+v error=%v", calls, sleeper.delays, result, err)
@@ -234,9 +238,11 @@ func TestAttemptErrorMustBeDeadlineExceeded(t *testing.T) {
 		Backoff: Constant(0), MaxAttempts: 1, AttemptTimeout: time.Second,
 		Clock: clock, Sleeper: &boundarySleeper{clock: clock}, Classifier: RetryableClassifier(),
 	})
-	_, result, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
-		return struct{}{}, Retryable(errors.New("temporary"))
+	execution26, executionError26 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+		return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 	})
+	_, result, err := execution26.Value, execution26.Retry, executionError26
+
 	var exhausted *ExhaustedError
 	if !errors.As(err, &exhausted) || result.Reason != ReasonAttemptsExhausted {
 		t.Fatalf("non-deadline attempt error: result=%+v error=%v", result, err)
@@ -256,13 +262,15 @@ func TestUnavailableDelayHintIsIgnored(t *testing.T) {
 		}),
 	})
 	calls := 0
-	_, _, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
+	execution27, executionError27 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 		calls++
 		if calls == 1 {
-			return struct{}{}, boundaryHint{delay: 10 * time.Second, available: false}
+			return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, boundaryHint{delay: 10 * time.Second, available: false}
 		}
-		return struct{}{}, nil
+		return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, nil
 	})
+	_, _, err := execution27.Value, execution27.Retry, executionError27
+
 	if err != nil || len(sleeper.delays) != 1 || sleeper.delays[0] != time.Second {
 		t.Fatalf("unavailable hint: sleeps=%v error=%v", sleeper.delays, err)
 	}
@@ -278,10 +286,12 @@ func TestBudgetArithmeticBoundaries(t *testing.T) {
 			Backoff: Constant(0), MaxAttempts: 2, MaxElapsed: 2 * time.Second,
 			Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 		})
-		_, _, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
+		execution28, executionError28 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 			clock.now = clock.now.Add(2 * time.Second)
-			return struct{}{}, Retryable(errors.New("temporary"))
+			return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 		})
+		_, _, err := execution28.Value, execution28.Retry, executionError28
+
 		var budget *BudgetError
 		if !errors.As(err, &budget) || budget.Kind != BudgetElapsed || len(sleeper.delays) != 0 {
 			t.Fatalf("elapsed equality: sleeps=%v error=%v", sleeper.delays, err)
@@ -295,10 +305,12 @@ func TestBudgetArithmeticBoundaries(t *testing.T) {
 			Backoff: Constant(7 * time.Second), MaxAttempts: 2, MaxElapsed: 10 * time.Second,
 			Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 		})
-		_, _, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
+		execution29, executionError29 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 			clock.now = clock.now.Add(4 * time.Second)
-			return struct{}{}, Retryable(errors.New("temporary"))
+			return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 		})
+		_, _, err := execution29.Value, execution29.Retry, executionError29
+
 		var budget *BudgetError
 		if !errors.As(err, &budget) || budget.Kind != BudgetElapsed || len(sleeper.delays) != 0 {
 			t.Fatalf("elapsed subtraction: sleeps=%v error=%v", sleeper.delays, err)
@@ -313,9 +325,11 @@ func TestBudgetArithmeticBoundaries(t *testing.T) {
 			MaxAttempts: 3, MaxSleep: time.Second,
 			Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 		})
-		_, _, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
-			return struct{}{}, Retryable(errors.New("temporary"))
+		execution30, executionError30 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+			return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 		})
+		_, _, err := execution30.Value, execution30.Retry, executionError30
+
 		var budget *BudgetError
 		if !errors.As(err, &budget) || budget.Kind != BudgetSleep || len(sleeper.delays) != 1 {
 			t.Fatalf("sleep equality: sleeps=%v error=%v", sleeper.delays, err)
@@ -330,9 +344,11 @@ func TestBudgetArithmeticBoundaries(t *testing.T) {
 			MaxAttempts: 3, MaxSleep: 10 * time.Second,
 			Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 		})
-		_, _, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
-			return struct{}{}, Retryable(errors.New("temporary"))
+		execution31, executionError31 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+			return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 		})
+		_, _, err := execution31.Value, execution31.Retry, executionError31
+
 		var budget *BudgetError
 		if !errors.As(err, &budget) || budget.Kind != BudgetSleep || len(sleeper.delays) != 1 {
 			t.Fatalf("sleep subtraction: sleeps=%v error=%v", sleeper.delays, err)
@@ -349,7 +365,7 @@ func TestStrictBudgetDecisionBoundaries(t *testing.T) {
 			Clock: clock, Sleeper: &boundarySleeper{}, Classifier: RetryableClassifier(),
 		})
 		calls := 0
-		result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+		result, err := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 			calls++
 			return AttemptResult[struct{}]{Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 		})
@@ -369,7 +385,7 @@ func TestStrictBudgetDecisionBoundaries(t *testing.T) {
 			}),
 		})
 		operationErr := errors.New("known failure")
-		result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+		result, err := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 			return AttemptResult[struct{}]{Outcome: OutcomeKnown}, operationErr
 		})
 		var permanent *PermanentError
@@ -398,7 +414,7 @@ func TestStrictBudgetDecisionBoundaries(t *testing.T) {
 				Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 			})
 			calls := 0
-			result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+			result, err := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 				calls++
 				if calls == 1 {
 					clock.now = clock.now.Add(test.elapsed)
@@ -429,7 +445,7 @@ func TestStrictBudgetDecisionBoundaries(t *testing.T) {
 				Backoff: &sequenceBackoff{delays: test.delays}, MaxAttempts: uint(len(test.delays) + 1), MaxSleep: test.maximum,
 				Clock: clock, Sleeper: sleeper, Classifier: RetryableClassifier(),
 			})
-			result, err := DoStrict(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+			result, err := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
 				return AttemptResult[struct{}]{Outcome: OutcomeKnown}, Retryable(errors.New("temporary"))
 			})
 			assertStrictBoundaryBudget(t, err, BudgetSleep)
@@ -450,7 +466,7 @@ func assertStrictBoundaryBudget(t *testing.T, err error, want BudgetKind) {
 
 func mustStrictBoundaryPolicy(t *testing.T, config Config) *Policy {
 	t.Helper()
-	policy, err := NewPolicyStrict(config)
+	policy, err := NewPolicy(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,9 +492,11 @@ func TestDoRejectsConstructedZeroAttemptPolicy(t *testing.T) {
 		Backoff: Constant(0), Clock: clock,
 		Sleeper: &boundarySleeper{clock: clock}, Classifier: RetryableClassifier(),
 	}}
-	_, _, err := Do(context.Background(), policy, func(context.Context) (struct{}, error) {
-		return struct{}{}, nil
+	execution32, executionError32 := Do(context.Background(), policy, func(context.Context) (AttemptResult[struct{}], error) {
+		return AttemptResult[struct{}]{Value: struct{}{}, Outcome: OutcomeKnown}, nil
 	})
+	_, _, err := execution32.Value, execution32.Retry, executionError32
+
 	if !errors.Is(err, ErrInvalidPolicy) {
 		t.Fatalf("zero-attempt policy error = %v", err)
 	}

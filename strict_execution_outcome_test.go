@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
-func TestDoStrictRejectsInvalidInputsBeforeDispatch(t *testing.T) {
+func TestDoRejectsInvalidInputsBeforeDispatch(t *testing.T) {
 	t.Parallel()
 
 	clock := newManualClock(time.Unix(100, 0))
 	policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
 	var typedNilContext *nilContext
-	operation := retry.StrictOperation[string](func(context.Context) (retry.AttemptResult[string], error) {
+	operation := retry.Operation[string](func(context.Context) (retry.AttemptResult[string], error) {
 		t.Fatal("operation was dispatched")
 		return retry.AttemptResult[string]{}, nil
 	})
@@ -25,7 +25,7 @@ func TestDoStrictRejectsInvalidInputsBeforeDispatch(t *testing.T) {
 		name      string
 		ctx       context.Context
 		policy    *retry.Policy
-		operation retry.StrictOperation[string]
+		operation retry.Operation[string]
 	}{
 		{"nil context", nil, policy, operation},
 		{"typed nil context", typedNilContext, policy, operation},
@@ -34,16 +34,16 @@ func TestDoStrictRejectsInvalidInputsBeforeDispatch(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result, err := retry.DoStrict(test.ctx, test.policy, test.operation)
+			result, err := retry.Do(test.ctx, test.policy, test.operation)
 			const want = "invalid retry policy: context, policy, and operation are required"
-			if result.Value != "" || result.Outcome != retry.OutcomeNotDispatched || result.Retry.Attempts != 0 || result.Retry.Reason != "" || len(result.Retry.History) != 0 || err == nil || err.Error() != want || len(err.Error()) != 65 || len(err.Error()) > retry.MaxStrictTerminalErrorBytes || !errors.Is(err, retry.ErrInvalidPolicy) {
-				t.Fatalf("DoStrict = (%+v, %v), want zero and %q", result, err, want)
+			if result.Value != "" || result.Outcome != retry.OutcomeNotDispatched || result.Retry.Attempts != 0 || result.Retry.Reason != "" || len(result.Retry.History) != 0 || err == nil || err.Error() != want || len(err.Error()) != 65 || len(err.Error()) > retry.MaxTerminalErrorBytes || !errors.Is(err, retry.ErrInvalidPolicy) {
+				t.Fatalf("Do = (%+v, %v), want zero and %q", result, err, want)
 			}
 		})
 	}
 }
 
-func TestDoStrictReportsPredispatchContextOutcome(t *testing.T) {
+func TestDoReportsPredispatchContextOutcome(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -59,7 +59,7 @@ func TestDoStrictReportsPredispatchContextOutcome(t *testing.T) {
 			clock := newManualClock(time.Unix(100, 0))
 			policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
 			calls := 0
-			result, err := retry.DoStrict(test.ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+			result, err := retry.Do(test.ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				calls++
 				return retry.AttemptResult[string]{Value: "unexpected", Outcome: retry.OutcomeKnown}, nil
 			})
@@ -82,7 +82,7 @@ func TestDoStrictReportsPredispatchContextOutcome(t *testing.T) {
 	}
 }
 
-func TestDoStrictDoesNotDiscloseCustomCancellationCause(t *testing.T) {
+func TestDoDoesNotDiscloseCustomCancellationCause(t *testing.T) {
 	t.Parallel()
 
 	sensitive := errors.New("customer secret")
@@ -90,7 +90,7 @@ func TestDoStrictDoesNotDiscloseCustomCancellationCause(t *testing.T) {
 	cancel(sensitive)
 	clock := newManualClock(time.Unix(100, 0))
 	policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
-	result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		t.Fatal("operation dispatched")
 		return retry.AttemptResult[string]{}, nil
 	})
@@ -99,22 +99,22 @@ func TestDoStrictDoesNotDiscloseCustomCancellationCause(t *testing.T) {
 	}
 }
 
-func TestDoStrictKnownResultWinsCancellationRace(t *testing.T) {
+func TestDoKnownResultWinsCancellationRace(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	clock := newManualClock(time.Unix(100, 0))
 	policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
-	result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		cancel()
 		return retry.AttemptResult[string]{Value: "accepted", Outcome: retry.OutcomeKnown}, nil
 	})
 	if err != nil || result.Value != "accepted" || result.Outcome != retry.OutcomeKnown || result.Retry.Attempts != 1 || result.Retry.Reason != retry.ReasonSucceeded {
-		t.Fatalf("DoStrict = (%+v, %v)", result, err)
+		t.Fatalf("Do = (%+v, %v)", result, err)
 	}
 }
 
-func TestDoStrictUnknownOutcomeIsBoundedAndNeverRetried(t *testing.T) {
+func TestDoUnknownOutcomeIsBoundedAndNeverRetried(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -143,7 +143,7 @@ func TestDoStrictUnknownOutcomeIsBoundedAndNeverRetried(t *testing.T) {
 			config.Observer = retry.ObserveFunc(func(observation retry.Observation) { observations = append(observations, observation) })
 			policy := mustStrictPolicy(t, config)
 			calls := 0
-			result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+			result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				calls++
 				if test.cancelDuring {
 					cancel()
@@ -173,7 +173,7 @@ func TestDoStrictUnknownOutcomeIsBoundedAndNeverRetried(t *testing.T) {
 	}
 }
 
-func TestDoStrictRejectsInvalidPostDispatchOutcome(t *testing.T) {
+func TestDoRejectsInvalidPostDispatchOutcome(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -193,14 +193,14 @@ func TestDoStrictRejectsInvalidPostDispatchOutcome(t *testing.T) {
 		config := baseConfig(clock, retry.Config{HistoryLimit: 1})
 		config.Observer = retry.ObserveFunc(func(observation retry.Observation) { observations = append(observations, observation) })
 		policy := mustStrictPolicy(t, config)
-		result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+		result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 			cancel()
 			return test.result, test.err
 		})
 		cancel()
-		const want = "invalid retry policy: strict operation returned an invalid outcome"
+		const want = "invalid retry policy: operation returned an invalid outcome"
 		var contextErr *retry.ContextError
-		if err == nil || err.Error() != want || len(err.Error()) != retry.MaxStrictTerminalErrorBytes || !errors.Is(err, retry.ErrInvalidPolicy) || errors.Is(err, retry.ErrOutcomeUnknown) || errors.As(err, &contextErr) {
+		if err == nil || err.Error() != want || len(err.Error()) > retry.MaxTerminalErrorBytes || !errors.Is(err, retry.ErrInvalidPolicy) || errors.Is(err, retry.ErrOutcomeUnknown) || errors.As(err, &contextErr) {
 			t.Fatalf("result=%+v err=%v", result, err)
 		}
 		if result.Outcome != retry.OutcomeUnknown || result.Value != "" || result.Retry.Attempts != 1 || result.Retry.Reason != retry.ReasonOutcomeUnknown {
@@ -215,13 +215,13 @@ func TestDoStrictRejectsInvalidPostDispatchOutcome(t *testing.T) {
 	}
 }
 
-func TestDoStrictCallerDeadlineAfterDispatchIsUnknown(t *testing.T) {
+func TestDoCallerDeadlineAfterDispatchIsUnknown(t *testing.T) {
 	t.Parallel()
 
 	ctx := &sequencedOutcomeContext{errAt: 3, err: context.DeadlineExceeded}
 	clock := newManualClock(time.Unix(100, 0))
 	policy := mustStrictPolicy(t, baseConfig(clock, retry.Config{}))
-	result, err := retry.DoStrict(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		return retry.AttemptResult[string]{Outcome: retry.OutcomeUnknown}, errors.New("ambiguous")
 	})
 	var contextErr *retry.ContextError
@@ -230,7 +230,7 @@ func TestDoStrictCallerDeadlineAfterDispatchIsUnknown(t *testing.T) {
 	}
 }
 
-func TestDoStrictKnownFailureWinsCallerDeadlineRace(t *testing.T) {
+func TestDoKnownFailureWinsCallerDeadlineRace(t *testing.T) {
 	t.Parallel()
 
 	ctx := &mutableStrictContext{}
@@ -245,7 +245,7 @@ func TestDoStrictKnownFailureWinsCallerDeadlineRace(t *testing.T) {
 		return retry.ClassificationPermanent, nil
 	})
 	policy := mustStrictPolicy(t, config)
-	result, err := retry.DoStrict(ctx, policy, func(got context.Context) (retry.AttemptResult[string], error) {
+	result, err := retry.Do(ctx, policy, func(got context.Context) (retry.AttemptResult[string], error) {
 		if got != ctx {
 			t.Fatal("operation context identity changed")
 		}
@@ -259,7 +259,7 @@ func TestDoStrictKnownFailureWinsCallerDeadlineRace(t *testing.T) {
 	}
 }
 
-func TestDoStrictUnknownAndInvalidOutcomesKeepHistoryDisabled(t *testing.T) {
+func TestDoUnknownAndInvalidOutcomesKeepHistoryDisabled(t *testing.T) {
 	t.Parallel()
 
 	clock := newManualClock(time.Unix(100, 0))
@@ -267,7 +267,7 @@ func TestDoStrictUnknownAndInvalidOutcomesKeepHistoryDisabled(t *testing.T) {
 		Backoff: retry.Constant(0), MaxAttempts: 2, Clock: clock,
 		Sleeper: advancingSleeper{clock}, Classifier: retry.RetryableClassifier(),
 	})
-	for _, operation := range []retry.StrictOperation[string]{
+	for _, operation := range []retry.Operation[string]{
 		func(context.Context) (retry.AttemptResult[string], error) {
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeUnknown}, errors.New("ambiguous")
 		},
@@ -275,7 +275,7 @@ func TestDoStrictUnknownAndInvalidOutcomesKeepHistoryDisabled(t *testing.T) {
 			return retry.AttemptResult[string]{Outcome: retry.OutcomeNotDispatched}, errors.New("invalid")
 		},
 	} {
-		result, err := retry.DoStrict(context.Background(), policy, operation)
+		result, err := retry.Do(context.Background(), policy, operation)
 		if err == nil || len(result.Retry.History) != 0 || result.Retry.Attempts != 1 || result.Outcome != retry.OutcomeUnknown {
 			t.Fatalf("result=%+v err=%v", result, err)
 		}
@@ -320,9 +320,9 @@ func (*sequencedOutcomeContext) Value(any) any { return nil }
 
 func mustStrictPolicy(t *testing.T, config retry.Config) *retry.Policy {
 	t.Helper()
-	policy, err := retry.NewPolicyStrict(config)
+	policy, err := retry.NewPolicy(config)
 	if err != nil {
-		t.Fatalf("NewPolicyStrict: %v", err)
+		t.Fatalf("NewPolicy: %v", err)
 	}
 	return policy
 }

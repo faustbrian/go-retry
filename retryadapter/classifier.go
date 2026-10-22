@@ -11,7 +11,7 @@ import (
 	"context"
 	"fmt"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 type classifier struct {

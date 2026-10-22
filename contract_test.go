@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 func TestBackoffHostileInputsRemainBounded(t *testing.T) {
@@ -69,7 +69,8 @@ func TestTypedMarkerAndTerminalErrorContracts(t *testing.T) {
 
 	clock := newManualClock(time.Unix(100, 0))
 	policy := mustPolicy(t, baseConfig(clock, retry.Config{}))
-	_, exhaustedResult, exhaustedErr := retry.Do(context.Background(), policy, alwaysRetryable)
+	execution2, executionError2 := retry.Do(context.Background(), policy, alwaysRetryable)
+	_, exhaustedResult, exhaustedErr := execution2.Value, execution2.Retry, executionError2
 	if !strings.Contains(exhaustedErr.Error(), "exhausted") {
 		t.Fatalf("exhausted error = %v", exhaustedErr)
 	}
@@ -80,14 +81,16 @@ func TestTypedMarkerAndTerminalErrorContracts(t *testing.T) {
 
 	canceledContext, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, canceledResult, canceledErr := retry.Do(canceledContext, policy, alwaysRetryable)
-	var canceled *retry.CanceledError
+	execution3, executionError3 := retry.Do(canceledContext, policy, alwaysRetryable)
+	_, canceledResult, canceledErr := execution3.Value, execution3.Retry, executionError3
+	var canceled *retry.ContextError
 	if !errors.As(canceledErr, &canceled) || canceled.Result().Reason != canceledResult.Reason || !strings.Contains(canceledErr.Error(), "canceled") {
 		t.Fatalf("canceled contract = %v", canceledErr)
 	}
 
 	budgetPolicy := mustPolicy(t, baseConfig(clock, retry.Config{MaxSleep: time.Nanosecond}))
-	_, budgetResult, budgetErr := retry.Do(context.Background(), budgetPolicy, alwaysRetryable)
+	execution4, executionError4 := retry.Do(context.Background(), budgetPolicy, alwaysRetryable)
+	_, budgetResult, budgetErr := execution4.Value, execution4.Retry, executionError4
 	var budget *retry.BudgetError
 	if !errors.As(budgetErr, &budget) || budget.Result().Reason != budgetResult.Reason || !strings.Contains(budgetErr.Error(), "sleep") {
 		t.Fatalf("budget contract = %v", budgetErr)
@@ -148,18 +151,20 @@ func TestPolicyRejectsTypedNilRequiredDependencies(t *testing.T) {
 func TestExecutionBoundaryPaths(t *testing.T) {
 	t.Parallel()
 
-	if _, _, err := retry.Do[struct{}](context.Background(), nil, alwaysRetryable); !errors.Is(err, retry.ErrInvalidPolicy) {
+	if _, err := retry.Do[struct{}](context.Background(), nil, alwaysRetryable); !errors.Is(err, retry.ErrInvalidPolicy) {
 		t.Fatalf("nil policy error = %v", err)
 	}
 	clock := newManualClock(time.Unix(100, 0))
 	policy := mustPolicy(t, baseConfig(clock, retry.Config{}))
-	if _, _, err := retry.Do[struct{}](context.Background(), policy, nil); !errors.Is(err, retry.ErrInvalidPolicy) {
+	if _, err := retry.Do[struct{}](context.Background(), policy, nil); !errors.Is(err, retry.ErrInvalidPolicy) {
 		t.Fatalf("nil operation error = %v", err)
 	}
 	cause := errors.New("do not retry")
-	_, result, err := retry.Do(context.Background(), policy, func(context.Context) (struct{}, error) {
-		return struct{}{}, retry.Permanent(cause)
+	execution5, executionError5 := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
+		return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, retry.Permanent(cause)
 	})
+	_, result, err := execution5.Value, execution5.Retry, executionError5
+
 	var permanent *retry.PermanentError
 	if !errors.As(err, &permanent) || !errors.Is(err, cause) || result.Reason != retry.ReasonPermanent {
 		t.Fatalf("permanent execution = %v %+v", err, result)
@@ -172,10 +177,12 @@ func TestExecutionBoundaryPaths(t *testing.T) {
 		Classifier: retry.RetryableClassifier(),
 	})
 	calls := 0
-	_, elapsedResult, elapsedErr := retry.Do(context.Background(), elapsedPolicy, func(context.Context) (struct{}, error) {
+	execution6, executionError6 := retry.Do(context.Background(), elapsedPolicy, func(context.Context) (retry.AttemptResult[struct{}], error) {
 		calls++
-		return struct{}{}, nil
+		return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, nil
 	})
+	_, elapsedResult, elapsedErr := execution6.Value, execution6.Retry, executionError6
+
 	var budget *retry.BudgetError
 	if !errors.As(elapsedErr, &budget) || calls != 0 || elapsedResult.Reason != retry.ReasonElapsedBudget {
 		t.Fatalf("pre-attempt elapsed = %v %+v calls=%d", elapsedErr, elapsedResult, calls)
@@ -190,7 +197,8 @@ func TestHistoryRetainsLatestFailuresWithinBound(t *testing.T) {
 	config.MaxAttempts = 4
 	config.HistoryLimit = 2
 	policy := mustPolicy(t, config)
-	_, result, _ := retry.Do(context.Background(), policy, alwaysRetryable)
+	execution7, executionError7 := retry.Do(context.Background(), policy, alwaysRetryable)
+	_, result, _ := execution7.Value, execution7.Retry, executionError7
 	if len(result.History) != 2 || result.History[0].Attempt != 3 || result.History[1].Attempt != 4 {
 		t.Fatalf("history = %+v", result.History)
 	}
@@ -208,13 +216,15 @@ func TestDelayHintRaisesTheSelectedDelay(t *testing.T) {
 		}),
 	})
 	calls := 0
-	_, result, err := retry.Do(context.Background(), policy, func(context.Context) (struct{}, error) {
+	execution8, executionError8 := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
 		calls++
 		if calls == 1 {
-			return struct{}{}, hintedError{delay: 3 * time.Second}
+			return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, hintedError{delay: 3 * time.Second}
 		}
-		return struct{}{}, nil
+		return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, nil
 	})
+	_, result, err := execution8.Value, execution8.Retry, executionError8
+
 	if err != nil || result.FinalDelay != 3*time.Second || result.Elapsed != 3*time.Second {
 		t.Fatalf("error=%v result=%+v", err, result)
 	}

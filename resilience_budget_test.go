@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/faustbrian/go-resilience"
-	"github.com/faustbrian/go-retry/v2"
+	"github.com/faustbrian/go-resilience/v2"
+	"github.com/faustbrian/go-retry/v3"
 )
 
 func TestRetryConsumesAttachedResilienceBudget(t *testing.T) {
@@ -21,7 +21,7 @@ func TestRetryConsumesAttachedResilienceBudget(t *testing.T) {
 		MaxAdditionalPerWindow:    1,
 		AdditionalWindow:          time.Minute,
 		PermitTTL:                 time.Minute,
-		Clock:                     clock,
+		Clock:                     clock, MaxScopes: 1,
 	})
 	if err != nil {
 		t.Fatalf("new budget: %v", err)
@@ -44,10 +44,12 @@ func TestRetryConsumesAttachedResilienceBudget(t *testing.T) {
 	})
 
 	calls := 0
-	_, result, err := retry.Do(ctx, policy, func(context.Context) (string, error) {
+	execution36, executionError36 := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 		calls++
-		return "", retry.Retryable(errors.New("downstream"))
+		return retry.AttemptResult[string]{Value: "", Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("downstream"))
 	})
+	_, result, err := execution36.Value, execution36.Retry, executionError36
+
 	var budgetErr *retry.BudgetError
 	if !errors.As(err, &budgetErr) || !errors.Is(err, resilience.ErrBudgetRejected) || budgetErr.Kind != retry.BudgetWork {
 		t.Fatalf("error = %v", err)
@@ -73,10 +75,12 @@ func TestRetryResilienceBudgetRequiresAttachedScope(t *testing.T) {
 		UseResilienceBudget: true,
 	})
 	called := false
-	_, result, err := retry.Do(context.Background(), policy, func(context.Context) (string, error) {
+	execution37, executionError37 := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
 		called = true
-		return "", nil
+		return retry.AttemptResult[string]{Value: "", Outcome: retry.OutcomeKnown}, nil
 	})
+	_, result, err := execution37.Value, execution37.Retry, executionError37
+
 	if !errors.Is(err, resilience.ErrBudgetScopeRequired) || called || result.Reason != retry.ReasonWorkBudget {
 		t.Fatalf("called = %v, result = %+v, error = %v", called, result, err)
 	}
@@ -89,7 +93,7 @@ func TestRetryReusesThePhysicalAttemptAlreadyInContext(t *testing.T) {
 	budget, err := resilience.NewBudget(resilience.BudgetConfig{
 		MaxResources: 1, MaxAdditionalPerExecution: 1,
 		MaxConcurrentAdditional: 1, MaxAdditionalPerWindow: 1,
-		AdditionalWindow: time.Minute, PermitTTL: time.Minute, Clock: clock,
+		AdditionalWindow: time.Minute, PermitTTL: time.Minute, Clock: clock, MaxScopes: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -111,13 +115,15 @@ func TestRetryReusesThePhysicalAttemptAlreadyInContext(t *testing.T) {
 		Sleeper: advancingSleeper{clock: clock}, Classifier: retry.RetryableClassifier(),
 		UseResilienceBudget: true,
 	})
-	_, result, err := retry.Do(attemptCtx, policy, func(ctx context.Context) (string, error) {
+	execution38, executionError38 := retry.Do(attemptCtx, policy, func(ctx context.Context) (retry.AttemptResult[string], error) {
 		current, ok := resilience.AttemptFromContext(ctx)
 		if !ok || current != original {
 			t.Fatalf("current attempt = (%+v, %v), want %+v", current, ok, original)
 		}
-		return "ok", nil
+		return retry.AttemptResult[string]{Value: "ok", Outcome: retry.OutcomeKnown}, nil
 	})
+	_, result, err := execution38.Value, execution38.Retry, executionError38
+
 	if err != nil || result.Attempts != 1 || result.Reason != retry.ReasonSucceeded {
 		t.Fatalf("result = %+v, error = %v", result, err)
 	}

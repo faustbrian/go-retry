@@ -7,8 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/faustbrian/go-resilience"
-	resiliencev2 "github.com/faustbrian/go-resilience/v2"
+	"github.com/faustbrian/go-resilience/v2"
 )
 
 // ErrInvalidPolicy identifies contradictory, implicit, or unbounded policies.
@@ -66,7 +65,7 @@ type Classifier interface {
 }
 
 // ClassifyFunc borrows a function as Classifier. Direct calls propagate panics;
-// Do and DoStrict contain classifier panics with distinct terminal errors.
+// Do contains classifier panics with bounded terminal errors.
 // A nil function is rejected as a required policy collaborator.
 type ClassifyFunc func(context.Context, error) (Classification, error)
 
@@ -117,65 +116,59 @@ type Config struct {
 }
 
 // Policy copies configuration but borrows collaborators and captured state.
-// Construct it with NewPolicy or NewPolicyStrict; the zero Policy is unusable.
+// Construct it with NewPolicy; the zero Policy is unusable.
 // Concurrent executions are safe only when all shared collaborators are safe;
 // retry owns no worker, shutdown lifecycle, callback lock or forced preemption.
 type Policy struct {
 	config Config
 }
 
-// The selected version owns lineage and completion for the entire execution;
-// nominal attempts are never converted or attached to the other version.
-type workAttempt struct {
-	ordinal  uint64
-	version2 bool
-}
-
-type budgetPermit interface {
-	Complete() error
-}
-
-func (policy *Policy) initialWorkContext(ctx context.Context) (context.Context, workAttempt, budgetPermit, error) {
+func (policy *Policy) initialWorkContext(ctx context.Context) (context.Context, resilience.Attempt, resilience.Permit, error) {
 	if !policy.config.UseResilienceBudget {
-		return ctx, workAttempt{}, nil, nil
-	}
-	_, version1 := resilience.BudgetScopeFromContext(ctx)
-	_, version2 := resiliencev2.BudgetScopeFromContext(ctx)
-	if version1 && version2 {
-		return nil, workAttempt{}, nil, fmt.Errorf("%w: multiple resilience budget versions", ErrInvalidPolicy)
-	}
-	if version2 {
-		if attempt, ok := resiliencev2.AttemptFromContext(ctx); ok {
-			return ctx, workAttempt{ordinal: attempt.Ordinal, version2: true}, nil, nil
-		}
-		attached, attempt, permit, err := resiliencev2.AdmitAttempt(ctx, resiliencev2.OriginOriginal, 0, policy.config.Clock.Now())
-		return attached, workAttempt{ordinal: attempt.Ordinal, version2: true}, permit, err
+		return ctx, resilience.Attempt{}, nil, nil
 	}
 	if attempt, ok := resilience.AttemptFromContext(ctx); ok {
-		return ctx, workAttempt{ordinal: attempt.Ordinal}, nil, nil
+		return ctx, attempt, nil, nil
 	}
-	attached, attempt, permit, err := resilience.AdmitAttempt(ctx, resilience.OriginOriginal, 0, policy.config.Clock.Now())
-	return attached, workAttempt{ordinal: attempt.Ordinal}, permit, err
+	return resilience.AdmitAttempt(ctx, resilience.OriginOriginal, 0, policy.config.Clock.Now())
 }
 
-func (policy *Policy) retryWorkContext(ctx context.Context, parent workAttempt) (context.Context, workAttempt, budgetPermit, error) {
+func (policy *Policy) retryWorkContext(ctx context.Context, parent resilience.Attempt) (context.Context, resilience.Attempt, resilience.Permit, error) {
 	if !policy.config.UseResilienceBudget {
-		return ctx, workAttempt{}, nil, nil
+		return ctx, resilience.Attempt{}, nil, nil
 	}
-	if parent.version2 {
-		attached, attempt, permit, err := resiliencev2.AdmitAttempt(ctx, resiliencev2.OriginRetry, parent.ordinal, policy.config.Clock.Now())
-		return attached, workAttempt{ordinal: attempt.Ordinal, version2: true}, permit, err
-	}
-	attached, attempt, permit, err := resilience.AdmitAttempt(ctx, resilience.OriginRetry, parent.ordinal, policy.config.Clock.Now())
-	return attached, workAttempt{ordinal: attempt.Ordinal}, permit, err
+	return resilience.AdmitAttempt(ctx, resilience.OriginRetry, parent.Ordinal, policy.config.Clock.Now())
 }
 
 // NewPolicy validates finite attempt count, required dependencies and consistent
 // nonnegative duration/history limits. Scalars are copied; dependencies are
-// borrowed. Typed-nil optional Random/Observer values normalize to absent.
+// borrowed. Explicitly typed-nil optional Random/Observer values are rejected.
 // It returns nil with an ErrInvalidPolicy-wrapping error on invalid config.
 func NewPolicy(config Config) (*Policy, error) {
-	return newPolicy(config, false)
+	switch {
+	case nilLike(config.Backoff):
+		return nil, fmt.Errorf("%w: backoff is required", ErrInvalidPolicy)
+	case config.MaxAttempts == 0:
+		return nil, fmt.Errorf("%w: max attempts must be positive", ErrInvalidPolicy)
+	case nilLike(config.Clock):
+		return nil, fmt.Errorf("%w: clock is required", ErrInvalidPolicy)
+	case nilLike(config.Sleeper):
+		return nil, fmt.Errorf("%w: sleeper is required", ErrInvalidPolicy)
+	case nilLike(config.Classifier):
+		return nil, fmt.Errorf("%w: classifier is required", ErrInvalidPolicy)
+	case config.MaxElapsed < 0 || config.AttemptTimeout < 0 || config.MinDelay < 0 || config.MaxDelay < 0 || config.MaxSleep < 0:
+		return nil, fmt.Errorf("%w: durations cannot be negative", ErrInvalidPolicy)
+	case config.MaxDelay > 0 && config.MinDelay > config.MaxDelay:
+		return nil, fmt.Errorf("%w: minimum delay exceeds maximum delay", ErrInvalidPolicy)
+	case config.HistoryLimit > MaxHistoryEntries:
+		return nil, fmt.Errorf("%w: history limit exceeds %d", ErrInvalidPolicy, MaxHistoryEntries)
+	case config.Random != nil && nilLike(config.Random):
+		return nil, fmt.Errorf("%w: random is typed nil", ErrInvalidPolicy)
+	case config.Observer != nil && nilLike(config.Observer):
+		return nil, fmt.Errorf("%w: observer is typed nil", ErrInvalidPolicy)
+	default:
+		return &Policy{config: config}, nil
+	}
 }
 
 func nilLike(value any) bool {

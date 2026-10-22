@@ -43,7 +43,7 @@ that hide a failing package.
 ## Verification
 
 For ordinary source work, `go test ./...` runs deterministic tests, fuzz seeds
-and saved corpus regressions. Use the qualified public Golib v2.4.0 verifier
+and saved corpus regressions. Use the qualified public Golib v2.5.1 verifier
 declared in `.golib.yaml` for repository checks:
 
 ```bash
@@ -79,7 +79,7 @@ CI/configuration-only changes do not require a module release.
 ## Selected Monthly Assurance
 
 [`assurance.yml`](.github/workflows/assurance.yml) runs on main at 08:17 UTC on
-the 8th day of each month. It selects one of the 5 declared root-module
+the 8th day of each month. It selects one of the 4 declared root-module
 package/target pairs using the shared UTC-week selector, not full campaigns or
 a guaranteed complete monthly rotation. Duplicate names in different packages
 remain separate risks. Explicit main-only dispatch accepts a declared identity
@@ -89,8 +89,8 @@ A bare name is accepted only when unique; inputs are validated as declared
 identities and are not forwarded as shell commands.
 
 The selected risks are nonnegative backoff, contradictory delay-bound rejection,
-Retry-After parsing and bounded response metadata. Existing assertions compare
-canonical/legacy parsing and retain accepted causes or typed refusal errors.
+Retry-After parsing and bounded response metadata. Existing assertions exercise canonical parsing against literal expected results
+and retain accepted causes or typed refusal errors.
 This does not establish operation replay safety, concurrent execution, admission
 cleanup, timer cancellation or adapter composition; retain affected lifecycle,
 race, public API and direct-consumer checks.

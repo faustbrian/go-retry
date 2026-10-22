@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	retry "github.com/faustbrian/go-retry/v2"
+	retry "github.com/faustbrian/go-retry/v3"
 )
 
 func TestExecutionBudgetsStopBeforeSleeping(t *testing.T) {
@@ -26,7 +26,8 @@ func TestExecutionBudgetsStopBeforeSleeping(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			clock := newManualClock(time.Unix(100, 0))
 			policy := mustPolicy(t, test.config(clock))
-			_, result, err := retry.Do(context.Background(), policy, alwaysRetryable)
+			execution10, executionError10 := retry.Do(context.Background(), policy, alwaysRetryable)
+			_, result, err := execution10.Value, execution10.Retry, executionError10
 			var budget *retry.BudgetError
 			if !errors.As(err, &budget) || budget.Kind != test.kind || result.Reason != test.reason {
 				t.Fatalf("error=%v result=%+v", err, result)
@@ -61,7 +62,8 @@ func TestDelayBoundsAreAppliedBeforeSleep(t *testing.T) {
 				Clock: clock, Sleeper: advancingSleeper{clock},
 				Classifier: retry.RetryableClassifier(),
 			})
-			_, result, _ := retry.Do(context.Background(), policy, alwaysRetryable)
+			execution11, executionError11 := retry.Do(context.Background(), policy, alwaysRetryable)
+			_, result, _ := execution11.Value, execution11.Retry, executionError11
 			if result.FinalDelay != test.expected || result.Elapsed != test.expected {
 				t.Fatalf("got %+v, want delay %s", result, test.expected)
 			}
@@ -79,11 +81,13 @@ func TestCancellationPrecedence(t *testing.T) {
 		clock := newManualClock(time.Unix(100, 0))
 		policy := mustPolicy(t, baseConfig(clock, retry.Config{}))
 		calls := 0
-		_, result, err := retry.Do(ctx, policy, func(context.Context) (struct{}, error) {
+		execution12, executionError12 := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
 			calls++
-			return struct{}{}, retry.Retryable(cause)
+			return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, retry.Retryable(cause)
 		})
-		var canceled *retry.CanceledError
+		_, result, err := execution12.Value, execution12.Retry, executionError12
+
+		var canceled *retry.ContextError
 		if !errors.As(err, &canceled) || !errors.Is(err, context.Canceled) || calls != 0 || result.Reason != retry.ReasonCanceled {
 			t.Fatalf("calls=%d error=%v result=%+v", calls, err, result)
 		}
@@ -96,8 +100,9 @@ func TestCancellationPrecedence(t *testing.T) {
 			Clock: clock, Sleeper: failingSleeper{context.Canceled},
 			Classifier: retry.RetryableClassifier(),
 		})
-		_, result, err := retry.Do(context.Background(), policy, alwaysRetryable)
-		var canceled *retry.CanceledError
+		execution13, executionError13 := retry.Do(context.Background(), policy, alwaysRetryable)
+		_, result, err := execution13.Value, execution13.Retry, executionError13
+		var canceled *retry.ContextError
 		if !errors.As(err, &canceled) || !errors.Is(err, context.Canceled) || result.Attempts != 1 {
 			t.Fatalf("error=%v result=%+v", err, result)
 		}
@@ -112,11 +117,13 @@ func TestCancellationPrecedence(t *testing.T) {
 			Clock: clock, Sleeper: cancelingSleeper{cancel: cancel},
 			Classifier: retry.RetryableClassifier(),
 		})
-		_, result, err := retry.Do(ctx, policy, func(context.Context) (struct{}, error) {
+		execution14, executionError14 := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
 			calls++
-			return struct{}{}, retry.Retryable(cause)
+			return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, retry.Retryable(cause)
 		})
-		var canceled *retry.CanceledError
+		_, result, err := execution14.Value, execution14.Retry, executionError14
+
+		var canceled *retry.ContextError
 		if !errors.As(err, &canceled) || !errors.Is(err, context.Canceled) || calls != 1 || result.Reason != retry.ReasonCanceled {
 			t.Fatalf("calls=%d error=%v result=%+v", calls, err, result)
 		}
@@ -126,17 +133,18 @@ func TestCancellationPrecedence(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		clock := newManualClock(time.Unix(100, 0))
 		policy := mustPolicy(t, baseConfig(clock, retry.Config{}))
-		_, result, err := retry.Do(ctx, policy, func(context.Context) (struct{}, error) {
+		execution15, executionError15 := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
 			cancel()
-			return struct{}{}, nil
+			return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, nil
 		})
-		var canceled *retry.CanceledError
-		if !errors.As(err, &canceled) || !errors.Is(err, context.Canceled) || result.Reason != retry.ReasonCanceled {
+		_, result, err := execution15.Value, execution15.Retry, executionError15
+
+		if err != nil || result.Reason != retry.ReasonSucceeded || result.Attempts != 1 {
 			t.Fatalf("error=%v result=%+v", err, result)
 		}
 	})
 
-	t.Run("caller deadline beats attempt timeout", func(t *testing.T) {
+	t.Run("known permanent failure wins caller cancellation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		clock := immediateTimeoutClock{newManualClock(time.Unix(100, 0))}
 		policy := mustPolicy(t, retry.Config{
@@ -144,12 +152,14 @@ func TestCancellationPrecedence(t *testing.T) {
 			Clock: clock, Sleeper: advancingSleeper{clock.manualClock},
 			Classifier: retry.RetryableClassifier(),
 		})
-		_, result, err := retry.Do(ctx, policy, func(context.Context) (struct{}, error) {
+		execution16, executionError16 := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
 			cancel()
-			return struct{}{}, cause
+			return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, cause
 		})
-		var canceled *retry.CanceledError
-		if !errors.As(err, &canceled) || result.Reason != retry.ReasonCanceled {
+		_, result, err := execution16.Value, execution16.Retry, executionError16
+
+		var permanent *retry.PermanentError
+		if !errors.As(err, &permanent) || !errors.Is(err, cause) || result.Reason != retry.ReasonPermanent || result.Attempts != 1 {
 			t.Fatalf("error=%v result=%+v", err, result)
 		}
 	})
@@ -164,9 +174,11 @@ func TestAttemptTimeoutReturnsBudgetError(t *testing.T) {
 		Clock: clock, Sleeper: advancingSleeper{clock.manualClock},
 		Classifier: retry.RetryableClassifier(),
 	})
-	_, result, err := retry.Do(context.Background(), policy, func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, ctx.Err()
+	execution17, executionError17 := retry.Do(context.Background(), policy, func(ctx context.Context) (retry.AttemptResult[struct{}], error) {
+		return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, ctx.Err()
 	})
+	_, result, err := execution17.Value, execution17.Retry, executionError17
+
 	var budget *retry.BudgetError
 	if !errors.As(err, &budget) || budget.Kind != retry.BudgetAttempt || !errors.Is(err, context.DeadlineExceeded) || result.Reason != retry.ReasonAttemptBudget {
 		t.Fatalf("error=%v result=%+v", err, result)
@@ -183,9 +195,11 @@ func TestElapsedDeadlinePrecedesLongerAttemptTimeout(t *testing.T) {
 		Clock: clock, Sleeper: advancingSleeper{clock.manualClock},
 		Classifier: retry.RetryableClassifier(),
 	})
-	_, result, err := retry.Do(context.Background(), policy, func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, ctx.Err()
+	execution18, executionError18 := retry.Do(context.Background(), policy, func(ctx context.Context) (retry.AttemptResult[struct{}], error) {
+		return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, ctx.Err()
 	})
+	_, result, err := execution18.Value, execution18.Retry, executionError18
+
 	var budget *retry.BudgetError
 	if !errors.As(err, &budget) || budget.Kind != retry.BudgetElapsed || result.Reason != retry.ReasonElapsedBudget {
 		t.Fatalf("error=%v result=%+v", err, result)
@@ -202,7 +216,8 @@ func TestNonContextSleeperFailureIsPermanent(t *testing.T) {
 		Clock: clock, Sleeper: failingSleeper{want},
 		Classifier: retry.RetryableClassifier(),
 	})
-	_, result, err := retry.Do(context.Background(), policy, alwaysRetryable)
+	execution19, executionError19 := retry.Do(context.Background(), policy, alwaysRetryable)
+	_, result, err := execution19.Value, execution19.Retry, executionError19
 	var permanent *retry.PermanentError
 	if !errors.As(err, &permanent) || !errors.Is(err, want) || result.Reason != retry.ReasonSleeperFailure {
 		t.Fatalf("error=%v result=%+v", err, result)
@@ -228,9 +243,10 @@ func TestExtensionFailuresStopSafely(t *testing.T) {
 				Backoff: retry.Constant(0), MaxAttempts: 2, Clock: clock,
 				Sleeper: advancingSleeper{clock}, Classifier: test.classifier,
 			})
-			_, result, err := retry.Do(context.Background(), policy, alwaysRetryable)
+			execution20, executionError20 := retry.Do(context.Background(), policy, alwaysRetryable)
+			_, result, err := execution20.Value, execution20.Retry, executionError20
 			var permanent *retry.PermanentError
-			if !errors.As(err, &permanent) || result.Attempts != 1 || result.Reason != retry.ReasonClassifierFailure {
+			if (test.name == "panic" && !errors.Is(err, retry.ErrInvalidPolicy)) || (test.name != "panic" && !errors.As(err, &permanent)) || result.Attempts != 1 || result.Reason != retry.ReasonClassifierFailure {
 				t.Fatalf("error=%v result=%+v", err, result)
 			}
 		})
@@ -241,7 +257,8 @@ func TestExtensionFailuresStopSafely(t *testing.T) {
 		config := baseConfig(clock, retry.Config{})
 		config.Observer = retry.ObserveFunc(func(retry.Observation) { panic("observer panic") })
 		policy := mustPolicy(t, config)
-		_, result, err := retry.Do(context.Background(), policy, alwaysRetryable)
+		execution21, executionError21 := retry.Do(context.Background(), policy, alwaysRetryable)
+		_, result, err := execution21.Value, execution21.Retry, executionError21
 		var exhausted *retry.ExhaustedError
 		if !errors.As(err, &exhausted) || result.Attempts != config.MaxAttempts {
 			t.Fatalf("error=%v result=%+v", err, result)
@@ -260,10 +277,12 @@ func TestOperationPanicIsNotRetried(t *testing.T) {
 			t.Fatalf("recovered=%v calls=%d", recovered, calls)
 		}
 	}()
-	_, _, _ = retry.Do(context.Background(), policy, func(context.Context) (struct{}, error) {
+	execution22, executionError22 := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[struct{}], error) {
 		calls++
 		panic("operation panic")
 	})
+	_, _, _ = execution22.Value, execution22.Retry, executionError22
+
 }
 
 func baseConfig(clock *manualClock, override retry.Config) retry.Config {
@@ -281,8 +300,8 @@ func baseConfig(clock *manualClock, override retry.Config) retry.Config {
 	return config
 }
 
-func alwaysRetryable(context.Context) (struct{}, error) {
-	return struct{}{}, retry.Retryable(errors.New("temporary"))
+func alwaysRetryable(context.Context) (retry.AttemptResult[struct{}], error) {
+	return retry.AttemptResult[struct{}]{Value: struct{}{}, Outcome: retry.OutcomeKnown}, retry.Retryable(errors.New("temporary"))
 }
 
 type failingSleeper struct{ err error }

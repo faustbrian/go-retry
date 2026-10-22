@@ -16,7 +16,7 @@ During an incident:
 4. preserve caller cancellation;
 5. change retry classification only with protocol evidence.
 
-When `DoStrict` returns `ErrOutcomeUnknown`, stop automatic retries and
+When `Do` returns `ErrOutcomeUnknown`, stop automatic retries and
 reconcile the operation through its idempotency key, transaction identity,
 provider lookup, or another authoritative record. Cancellation classification
 does not make the operation safe to replay. Preserve the returned retry reason
