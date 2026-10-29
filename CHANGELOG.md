@@ -4,6 +4,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-29
+
 ### Added
 
 - `Config.StopBeforeDeadline` stops with a `BudgetDeadline` budget error and
@@ -208,7 +210,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 - Coverage, fuzz, race, leak, mutation, API, documentation, and benchmark
   gates.
 
-[Unreleased]: https://github.com/faustbrian/go-retry/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/faustbrian/go-retry/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/faustbrian/go-retry/compare/v3.0.0...v3.1.0
 [2.0.0]: https://github.com/faustbrian/go-retry/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/faustbrian/go-retry/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/faustbrian/go-retry/releases/tag/v1.0.0
