@@ -124,8 +124,8 @@ type BudgetError struct {
 
 	// Has unexported fields.
 }
-    BudgetError reports exhaustion of an elapsed, sleep, attempt, or shared-work
-    budget.
+    BudgetError reports exhaustion of an elapsed, sleep, caller-deadline,
+    attempt, or shared-work budget.
 
 func (err *BudgetError) Error() string
     Error returns a fixed bounded category, not the retained cause text.

@@ -307,10 +307,12 @@ func Do[T any](ctx context.Context, policy *Policy, operation Operation[T]) (Exe
 			safe := singleCause("retry operation failed", operationErr)
 			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetSleep, cause: safe, result: result.clone()}
 		}
-		if deadline, ok := ctx.Deadline(); policy.config.StopBeforeDeadline && ok && !policy.config.Clock.Now().Add(delay).Before(deadline) {
-			result = finish(policy, start, result, ReasonDeadlineBudget)
-			safe := singleCause("retry operation failed", operationErr)
-			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetDeadline, cause: safe, result: result.clone()}
+		if policy.config.StopBeforeDeadline {
+			if deadline, ok := ctx.Deadline(); ok && !policy.config.Clock.Now().Add(delay).Before(deadline) {
+				result = finish(policy, start, result, ReasonDeadlineBudget)
+				safe := singleCause("retry operation failed", operationErr)
+				return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetDeadline, cause: safe, result: result.clone()}
+			}
 		}
 		observe(policy, Observation{Attempt: attempt, Elapsed: currentElapsed, NextDelay: delay, Classification: classification})
 		if err := policy.config.Sleeper.Sleep(ctx, delay); err != nil {

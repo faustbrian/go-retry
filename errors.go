@@ -94,7 +94,8 @@ const (
 	BudgetWork BudgetKind = "work"
 )
 
-// BudgetError reports exhaustion of an elapsed, sleep, attempt, or shared-work budget.
+// BudgetError reports exhaustion of an elapsed, sleep, caller-deadline, attempt, or
+// shared-work budget.
 type BudgetError struct {
 	// Kind selects a known budget category; unrecognized values use generic text.
 	Kind   BudgetKind

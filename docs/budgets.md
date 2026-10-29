@@ -27,7 +27,9 @@ sleeps until cancellation. Set `StopBeforeDeadline` to stop instead: when the
 selected delay would reach the context deadline, measured on Clock, execution
 returns a `BudgetError` of kind `BudgetDeadline` with `ReasonDeadlineBudget`
 and the last failure as its cause. Use it when the caller holds scarce
-resources, such as bulkhead permits, while it waits.
+resources, such as bulkhead permits, while it waits. When several budgets
+reject the same delay, the elapsed budget wins, then the sleep budget, then
+the deadline.
 
 Use both attempt and elapsed budgets for remote calls. A finite attempt count
 alone does not limit a blocked operation.

@@ -328,22 +328,32 @@ func TestStopBeforeDeadlineReturnsTheLastFailureInsteadOfSleepingPastIt(t *testi
 		name     string
 		enabled  bool
 		deadline time.Duration
+		adjust   func(*retry.Config)
 		attempts uint
 		reason   retry.Reason
+		slept    time.Duration
 	}{
-		{"delay passes the deadline", true, 3 * time.Second, 2, retry.ReasonDeadlineBudget},
-		{"delay ends exactly at the deadline", true, 4 * time.Second, 2, retry.ReasonDeadlineBudget},
-		{"delay ends before the deadline", true, 4*time.Second + time.Nanosecond, 3, retry.ReasonAttemptsExhausted},
-		{"disabled", false, 3 * time.Second, 3, retry.ReasonAttemptsExhausted},
-		{"no deadline", true, 0, 3, retry.ReasonAttemptsExhausted},
+		{"delay passes the deadline", true, 3 * time.Second, nil, 2, retry.ReasonDeadlineBudget, 2 * time.Second},
+		{"delay ends exactly at the deadline", true, 4 * time.Second, nil, 2, retry.ReasonDeadlineBudget, 2 * time.Second},
+		{"delay ends before the deadline", true, 4*time.Second + time.Nanosecond, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
+		{"minimum delay passes the deadline", true, 3 * time.Second, func(config *retry.Config) { config.MinDelay = 5 * time.Second }, 1, retry.ReasonDeadlineBudget, 0},
+		{"zero delay before the deadline", true, time.Second, func(config *retry.Config) { config.Backoff = retry.Constant(0) }, 3, retry.ReasonAttemptsExhausted, 0},
+		{"elapsed budget wins", true, time.Second, func(config *retry.Config) { config.MaxElapsed = time.Second }, 1, retry.ReasonElapsedBudget, 0},
+		{"disabled", false, 3 * time.Second, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
+		{"no deadline", true, 0, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			start := time.Now()
+			// The clock starts an hour ahead so contexts built from it cannot
+			// expire in real time while the test runs.
+			start := time.Now().Add(time.Hour)
 			clock := newManualClock(start)
 			config := baseConfig(clock, retry.Config{})
 			config.StopBeforeDeadline = test.enabled
+			if test.adjust != nil {
+				test.adjust(&config)
+			}
 			ctx := context.Background()
 			if test.deadline > 0 {
 				var cancel context.CancelFunc
@@ -358,8 +368,11 @@ func TestStopBeforeDeadlineReturnsTheLastFailureInsteadOfSleepingPastIt(t *testi
 			if isDeadline := errors.As(err, &budget) && budget.Kind == retry.BudgetDeadline; isDeadline != (test.reason == retry.ReasonDeadlineBudget) {
 				t.Fatalf("error = %v", err)
 			}
-			if test.reason == retry.ReasonDeadlineBudget && (err.Error() != "retry deadline budget exhausted" || clock.Now().Sub(start) != 2*time.Second) {
-				t.Fatalf("error %q after %s", err, clock.Now().Sub(start))
+			if test.reason == retry.ReasonDeadlineBudget && err.Error() != "retry deadline budget exhausted" {
+				t.Fatalf("error = %q", err)
+			}
+			if slept := clock.Now().Sub(start); slept != test.slept {
+				t.Fatalf("slept %s, want %s", slept, test.slept)
 			}
 		})
 	}
