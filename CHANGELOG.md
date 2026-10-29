@@ -4,6 +4,13 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) style.
 
 ## [Unreleased]
 
+### Added
+
+- `Config.StopBeforeDeadline` stops with a `BudgetDeadline` budget error and
+  `ReasonDeadlineBudget` instead of sleeping when the selected delay would
+  reach the caller context deadline, so callers holding scarce resources get
+  the last failure at once.
+
 ## [3.0.0] - 2026-10-16
 
 ### Changed

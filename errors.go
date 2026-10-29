@@ -85,6 +85,9 @@ const (
 	BudgetElapsed BudgetKind = "elapsed"
 	// BudgetSleep identifies the accumulated-sleep budget.
 	BudgetSleep BudgetKind = "sleep"
+	// BudgetDeadline identifies a retry delay that cannot finish before the
+	// caller context deadline.
+	BudgetDeadline BudgetKind = "deadline"
 	// BudgetAttempt identifies a per-attempt timeout.
 	BudgetAttempt BudgetKind = "attempt"
 	// BudgetWork identifies denial by the shared retry-plus-hedge work budget.
@@ -102,7 +105,7 @@ type BudgetError struct {
 // Error returns a fixed bounded category, not the retained cause text.
 func (err *BudgetError) Error() string {
 	switch err.Kind {
-	case BudgetElapsed, BudgetSleep, BudgetAttempt, BudgetWork:
+	case BudgetElapsed, BudgetSleep, BudgetDeadline, BudgetAttempt, BudgetWork:
 		return fmt.Sprintf("retry %s budget exhausted", err.Kind)
 	default:
 		return "retry budget exhausted"

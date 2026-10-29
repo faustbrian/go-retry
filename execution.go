@@ -25,6 +25,9 @@ const (
 	ReasonElapsedBudget Reason = "elapsed_budget"
 	// ReasonSleepBudget identifies accumulated-sleep exhaustion.
 	ReasonSleepBudget Reason = "sleep_budget"
+	// ReasonDeadlineBudget identifies a delay that cannot finish before the
+	// caller context deadline.
+	ReasonDeadlineBudget Reason = "deadline_budget"
 	// ReasonAttemptBudget identifies a per-attempt timeout.
 	ReasonAttemptBudget Reason = "attempt_budget"
 	// ReasonClassifierFailure identifies a classifier error or invalid result.
@@ -303,6 +306,11 @@ func Do[T any](ctx context.Context, policy *Policy, operation Operation[T]) (Exe
 			result = finish(policy, start, result, ReasonSleepBudget)
 			safe := singleCause("retry operation failed", operationErr)
 			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetSleep, cause: safe, result: result.clone()}
+		}
+		if deadline, ok := ctx.Deadline(); policy.config.StopBeforeDeadline && ok && !policy.config.Clock.Now().Add(delay).Before(deadline) {
+			result = finish(policy, start, result, ReasonDeadlineBudget)
+			safe := singleCause("retry operation failed", operationErr)
+			return ExecutionResult[T]{Retry: result, Outcome: OutcomeKnown}, &BudgetError{Kind: BudgetDeadline, cause: safe, result: result.clone()}
 		}
 		observe(policy, Observation{Attempt: attempt, Elapsed: currentElapsed, NextDelay: delay, Classification: classification})
 		if err := policy.config.Sleeper.Sleep(ctx, delay); err != nil {

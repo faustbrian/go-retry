@@ -320,3 +320,47 @@ type immediateTimeoutClock struct{ *manualClock }
 func (clock immediateTimeoutClock) WithTimeout(parent context.Context, _ time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithDeadline(parent, time.Unix(0, 0))
 }
+
+func TestStopBeforeDeadlineReturnsTheLastFailureInsteadOfSleepingPastIt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		enabled  bool
+		deadline time.Duration
+		attempts uint
+		reason   retry.Reason
+	}{
+		{"delay passes the deadline", true, 3 * time.Second, 2, retry.ReasonDeadlineBudget},
+		{"delay ends exactly at the deadline", true, 4 * time.Second, 2, retry.ReasonDeadlineBudget},
+		{"delay ends before the deadline", true, 4*time.Second + time.Nanosecond, 3, retry.ReasonAttemptsExhausted},
+		{"disabled", false, 3 * time.Second, 3, retry.ReasonAttemptsExhausted},
+		{"no deadline", true, 0, 3, retry.ReasonAttemptsExhausted},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			start := time.Now()
+			clock := newManualClock(start)
+			config := baseConfig(clock, retry.Config{})
+			config.StopBeforeDeadline = test.enabled
+			ctx := context.Background()
+			if test.deadline > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, start.Add(test.deadline))
+				defer cancel()
+			}
+			execution, err := retry.Do(ctx, mustPolicy(t, config), alwaysRetryable)
+			if execution.Retry.Attempts != test.attempts || execution.Retry.Reason != test.reason {
+				t.Fatalf("result = %+v, want %d attempts and %s", execution.Retry, test.attempts, test.reason)
+			}
+			var budget *retry.BudgetError
+			if isDeadline := errors.As(err, &budget) && budget.Kind == retry.BudgetDeadline; isDeadline != (test.reason == retry.ReasonDeadlineBudget) {
+				t.Fatalf("error = %v", err)
+			}
+			if test.reason == retry.ReasonDeadlineBudget && (err.Error() != "retry deadline budget exhausted" || clock.Now().Sub(start) != 2*time.Second) {
+				t.Fatalf("error %q after %s", err, clock.Now().Sub(start))
+			}
+		})
+	}
+}
