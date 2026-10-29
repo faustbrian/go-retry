@@ -158,9 +158,11 @@ func TestDoKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) {
 				config := test.config(clock)
 				config.HistoryLimit = historyLimit
 				policy := mustStrictPolicy(t, config)
-				ctx, cancel := context.WithDeadline(context.Background(), start.Add(time.Second))
-				if test.wantKind != retry.BudgetDeadline {
-					ctx, cancel = context.WithCancel(context.Background())
+				ctx := context.Background()
+				if test.wantKind == retry.BudgetDeadline {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithDeadline(ctx, start.Add(time.Second))
+					t.Cleanup(cancel)
 				}
 				result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 					return retry.AttemptResult[string]{Value: "discarded", Outcome: retry.OutcomeKnown}, cause
@@ -196,7 +198,6 @@ func TestDoKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) {
 						t.Fatalf("safe error does not reach %T", want)
 					}
 				}
-				cancel()
 				assertStrictCarrier(t, err, test.causes)
 				assertStrictTypedCauses(t, err, test.causes)
 				switch test.wantType {
@@ -293,6 +294,7 @@ func TestDoUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 			start := time.Now().Add(time.Hour)
 			clock := newManualClock(start)
 			ctx, cancel := context.WithDeadline(context.Background(), start.Add(2*time.Second))
+			t.Cleanup(cancel)
 			config := retry.Config{
 				Backoff: retry.Constant(time.Second), MaxAttempts: 2,
 				Clock: clock, Sleeper: advancingSleeper{clock},
@@ -306,7 +308,6 @@ func TestDoUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 			result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, hinted
 			})
-			cancel()
 			var budget *retry.BudgetError
 			wantReason := map[retry.BudgetKind]retry.Reason{
 				retry.BudgetElapsed: retry.ReasonElapsedBudget, retry.BudgetSleep: retry.ReasonSleepBudget, retry.BudgetDeadline: retry.ReasonDeadlineBudget,

@@ -339,6 +339,7 @@ func TestStopBeforeDeadlineReturnsTheLastFailureInsteadOfSleepingPastIt(t *testi
 		{"minimum delay passes the deadline", true, 3 * time.Second, func(config *retry.Config) { config.MinDelay = 5 * time.Second }, 1, retry.ReasonDeadlineBudget, 0},
 		{"zero delay before the deadline", true, time.Second, func(config *retry.Config) { config.Backoff = retry.Constant(0) }, 3, retry.ReasonAttemptsExhausted, 0},
 		{"elapsed budget wins", true, time.Second, func(config *retry.Config) { config.MaxElapsed = time.Second }, 1, retry.ReasonElapsedBudget, 0},
+		{"sleep budget wins", true, time.Second, func(config *retry.Config) { config.MaxSleep = time.Second }, 1, retry.ReasonSleepBudget, 0},
 		{"disabled", false, 3 * time.Second, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
 		{"no deadline", true, 0, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
 	}
