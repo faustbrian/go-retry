@@ -124,8 +124,8 @@ type BudgetError struct {
 
 	// Has unexported fields.
 }
-    BudgetError reports exhaustion of an elapsed, sleep, attempt, or shared-work
-    budget.
+    BudgetError reports exhaustion of an elapsed, sleep, caller-deadline,
+    attempt, or shared-work budget.
 
 func (err *BudgetError) Error() string
     Error returns a fixed bounded category, not the retained cause text.
@@ -144,6 +144,9 @@ const (
 	BudgetElapsed BudgetKind = "elapsed"
 	// BudgetSleep identifies the accumulated-sleep budget.
 	BudgetSleep BudgetKind = "sleep"
+	// BudgetDeadline identifies a retry delay that cannot finish before the
+	// caller context deadline.
+	BudgetDeadline BudgetKind = "deadline"
 	// BudgetAttempt identifies a per-attempt timeout.
 	BudgetAttempt BudgetKind = "attempt"
 	// BudgetWork identifies denial by the shared retry-plus-hedge work budget.
@@ -211,6 +214,11 @@ type Config struct {
 	// MaxSleep caps accumulated successful sleep requests; zero disables it.
 	// It does not measure actual sleeper wall time.
 	MaxSleep time.Duration
+	// StopBeforeDeadline stops instead of sleeping when the selected delay
+	// would reach the caller context deadline, measured on Clock, so callers
+	// holding scarce resources get the last failure at once rather than after
+	// cancellation. A custom Clock must agree with the context deadline.
+	StopBeforeDeadline bool
 	// Clock is required and borrowed for elapsed accounting and optional deadlines.
 	Clock Clock
 	// Sleeper is required and borrowed; it receives the caller context, not
@@ -404,6 +412,9 @@ const (
 	ReasonElapsedBudget Reason = "elapsed_budget"
 	// ReasonSleepBudget identifies accumulated-sleep exhaustion.
 	ReasonSleepBudget Reason = "sleep_budget"
+	// ReasonDeadlineBudget identifies a delay that cannot finish before the
+	// caller context deadline.
+	ReasonDeadlineBudget Reason = "deadline_budget"
 	// ReasonAttemptBudget identifies a per-attempt timeout.
 	ReasonAttemptBudget Reason = "attempt_budget"
 	// ReasonClassifierFailure identifies a classifier error or invalid result.

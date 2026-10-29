@@ -22,6 +22,15 @@ Policy elapsed or attempt deadlines return bounded `BudgetError` values. Delay
 that cannot fit the remaining elapsed or sleep budget is rejected before
 sleeping.
 
+By default a delay longer than the caller context's remaining time still
+sleeps until cancellation. Set `StopBeforeDeadline` to stop instead: when the
+selected delay would reach the context deadline, measured on Clock, execution
+returns a `BudgetError` of kind `BudgetDeadline` with `ReasonDeadlineBudget`
+and the last failure as its cause. Use it when the caller holds scarce
+resources, such as bulkhead permits, while it waits. When several budgets
+reject the same delay, the elapsed budget wins, then the sleep budget, then
+the deadline.
+
 Use both attempt and elapsed budgets for remote calls. A finite attempt count
 alone does not limit a blocked operation.
 

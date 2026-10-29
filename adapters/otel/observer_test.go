@@ -75,7 +75,7 @@ func TestObserverExactValuesUnitsAndMappings(t *testing.T) {
 	reasons := map[retry.Reason]string{
 		"": "none", retry.ReasonSucceeded: "succeeded", retry.ReasonPermanent: "permanent",
 		retry.ReasonAttemptsExhausted: "attempts_exhausted", retry.ReasonCanceled: "canceled",
-		retry.ReasonElapsedBudget: "elapsed_budget", retry.ReasonSleepBudget: "sleep_budget",
+		retry.ReasonElapsedBudget: "elapsed_budget", retry.ReasonSleepBudget: "sleep_budget", retry.ReasonDeadlineBudget: "deadline_budget",
 		retry.ReasonAttemptBudget: "attempt_budget", retry.ReasonClassifierFailure: "classifier_failure",
 		retry.ReasonSleeperFailure: "sleeper_failure", retry.ReasonWorkBudget: "work_budget", "hostile": "unknown",
 	}
@@ -241,7 +241,7 @@ func TestObserverBoundsEveryClassificationAndReason(t *testing.T) {
 		observer.Observe(retry.Observation{Classification: classification})
 	}
 	for _, reason := range []retry.Reason{"", retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted,
-		retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget, retry.ReasonAttemptBudget,
+		retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget, retry.ReasonDeadlineBudget, retry.ReasonAttemptBudget,
 		retry.ReasonClassifierFailure, retry.ReasonSleeperFailure, retry.ReasonWorkBudget, retry.ReasonOutcomeUnknown, "hostile"} {
 		observer.Observe(retry.Observation{Reason: reason})
 	}
@@ -501,7 +501,7 @@ func reasonName(value retry.Reason) string {
 	switch value {
 	case "":
 		return "none"
-	case retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted, retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget, retry.ReasonAttemptBudget, retry.ReasonClassifierFailure, retry.ReasonSleeperFailure, retry.ReasonWorkBudget, retry.ReasonOutcomeUnknown:
+	case retry.ReasonSucceeded, retry.ReasonPermanent, retry.ReasonAttemptsExhausted, retry.ReasonCanceled, retry.ReasonElapsedBudget, retry.ReasonSleepBudget, retry.ReasonDeadlineBudget, retry.ReasonAttemptBudget, retry.ReasonClassifierFailure, retry.ReasonSleeperFailure, retry.ReasonWorkBudget, retry.ReasonOutcomeUnknown:
 		return string(value)
 	default:
 		return "unknown"

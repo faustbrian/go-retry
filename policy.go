@@ -94,6 +94,11 @@ type Config struct {
 	// MaxSleep caps accumulated successful sleep requests; zero disables it.
 	// It does not measure actual sleeper wall time.
 	MaxSleep time.Duration
+	// StopBeforeDeadline stops instead of sleeping when the selected delay
+	// would reach the caller context deadline, measured on Clock, so callers
+	// holding scarce resources get the last failure at once rather than after
+	// cancellation. A custom Clock must agree with the context deadline.
+	StopBeforeDeadline bool
 	// Clock is required and borrowed for elapsed accounting and optional deadlines.
 	Clock Clock
 	// Sleeper is required and borrowed; it receives the caller context, not

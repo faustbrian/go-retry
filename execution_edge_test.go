@@ -320,3 +320,61 @@ type immediateTimeoutClock struct{ *manualClock }
 func (clock immediateTimeoutClock) WithTimeout(parent context.Context, _ time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithDeadline(parent, time.Unix(0, 0))
 }
+
+func TestStopBeforeDeadlineReturnsTheLastFailureInsteadOfSleepingPastIt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		enabled  bool
+		deadline time.Duration
+		adjust   func(*retry.Config)
+		attempts uint
+		reason   retry.Reason
+		slept    time.Duration
+	}{
+		{"delay passes the deadline", true, 3 * time.Second, nil, 2, retry.ReasonDeadlineBudget, 2 * time.Second},
+		{"delay ends exactly at the deadline", true, 4 * time.Second, nil, 2, retry.ReasonDeadlineBudget, 2 * time.Second},
+		{"delay ends before the deadline", true, 4*time.Second + time.Nanosecond, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
+		{"minimum delay passes the deadline", true, 3 * time.Second, func(config *retry.Config) { config.MinDelay = 5 * time.Second }, 1, retry.ReasonDeadlineBudget, 0},
+		{"zero delay before the deadline", true, time.Second, func(config *retry.Config) { config.Backoff = retry.Constant(0) }, 3, retry.ReasonAttemptsExhausted, 0},
+		{"elapsed budget wins", true, time.Second, func(config *retry.Config) { config.MaxElapsed = time.Second }, 1, retry.ReasonElapsedBudget, 0},
+		{"sleep budget wins", true, time.Second, func(config *retry.Config) { config.MaxSleep = time.Second }, 1, retry.ReasonSleepBudget, 0},
+		{"disabled", false, 3 * time.Second, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
+		{"no deadline", true, 0, nil, 3, retry.ReasonAttemptsExhausted, 4 * time.Second},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			// The clock starts an hour ahead so contexts built from it cannot
+			// expire in real time while the test runs.
+			start := time.Now().Add(time.Hour)
+			clock := newManualClock(start)
+			config := baseConfig(clock, retry.Config{})
+			config.StopBeforeDeadline = test.enabled
+			if test.adjust != nil {
+				test.adjust(&config)
+			}
+			ctx := context.Background()
+			if test.deadline > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, start.Add(test.deadline))
+				defer cancel()
+			}
+			execution, err := retry.Do(ctx, mustPolicy(t, config), alwaysRetryable)
+			if execution.Retry.Attempts != test.attempts || execution.Retry.Reason != test.reason {
+				t.Fatalf("result = %+v, want %d attempts and %s", execution.Retry, test.attempts, test.reason)
+			}
+			var budget *retry.BudgetError
+			if isDeadline := errors.As(err, &budget) && budget.Kind == retry.BudgetDeadline; isDeadline != (test.reason == retry.ReasonDeadlineBudget) {
+				t.Fatalf("error = %v", err)
+			}
+			if test.reason == retry.ReasonDeadlineBudget && err.Error() != "retry deadline budget exhausted" {
+				t.Fatalf("error = %q", err)
+			}
+			if slept := clock.Now().Sub(start); slept != test.slept {
+				t.Fatalf("slept %s, want %s", slept, test.slept)
+			}
+		})
+	}
+}

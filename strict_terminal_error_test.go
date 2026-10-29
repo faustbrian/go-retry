@@ -141,15 +141,30 @@ func TestDoKnownTerminalWrappersAreBoundedAndPreserveCauses(t *testing.T) {
 			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationRetryable, nil })
 			return config
 		}, "retry sleep budget exhausted", retry.ReasonSleepBudget, retry.BudgetSleep, "budget", []error{cause}, 1},
+		{"deadline", func(clock *manualClock) retry.Config {
+			config := baseConfig(clock, retry.Config{})
+			config.StopBeforeDeadline = true
+			config.Classifier = retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationRetryable, nil })
+			return config
+		}, "retry deadline budget exhausted", retry.ReasonDeadlineBudget, retry.BudgetDeadline, "budget", []error{cause}, 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for _, historyLimit := range []uint{0, 2} {
-				clock := newManualClock(time.Unix(100, 0))
+				// The clock starts an hour ahead so the deadline row's
+				// context, one second after it, cannot expire in real time.
+				start := time.Now().Add(time.Hour)
+				clock := newManualClock(start)
 				config := test.config(clock)
 				config.HistoryLimit = historyLimit
 				policy := mustStrictPolicy(t, config)
-				result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+				ctx := context.Background()
+				if test.wantKind == retry.BudgetDeadline {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithDeadline(ctx, start.Add(time.Second))
+					t.Cleanup(cancel)
+				}
+				result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 					return retry.AttemptResult[string]{Value: "discarded", Outcome: retry.OutcomeKnown}, cause
 				})
 				if err == nil || err.Error() != test.wantText || len(err.Error()) > retry.MaxTerminalErrorBytes || strings.Contains(err.Error(), "secret") || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != test.wantReason {
@@ -273,32 +288,31 @@ func TestDoAttemptTimeoutAndWorkBudgetErrorsAreSafe(t *testing.T) {
 func TestDoUsesOneDelayHintAndPreservesBudgetCause(t *testing.T) {
 	t.Parallel()
 
-	for _, budgetKind := range []retry.BudgetKind{retry.BudgetElapsed, retry.BudgetSleep} {
+	for _, budgetKind := range []retry.BudgetKind{retry.BudgetElapsed, retry.BudgetSleep, retry.BudgetDeadline} {
 		for _, historyLimit := range []uint{0, 1} {
 			hinted := &strictHintedError{delay: 3 * time.Second}
-			clock := newManualClock(time.Unix(100, 0))
+			start := time.Now().Add(time.Hour)
+			clock := newManualClock(start)
+			ctx, cancel := context.WithDeadline(context.Background(), start.Add(2*time.Second))
+			t.Cleanup(cancel)
 			config := retry.Config{
 				Backoff: retry.Constant(time.Second), MaxAttempts: 2,
 				Clock: clock, Sleeper: advancingSleeper{clock},
 				Classifier:   retry.ClassifyFunc(func(context.Context, error) (retry.Classification, error) { return retry.ClassificationRetryable, nil }),
 				HistoryLimit: historyLimit,
 			}
-			if budgetKind == retry.BudgetElapsed {
-				config.MaxElapsed = 2 * time.Second
-			} else {
-				config.MaxSleep = 2 * time.Second
-			}
+			config.MaxElapsed = map[retry.BudgetKind]time.Duration{retry.BudgetElapsed: 2 * time.Second}[budgetKind]
+			config.MaxSleep = map[retry.BudgetKind]time.Duration{retry.BudgetSleep: 2 * time.Second}[budgetKind]
+			config.StopBeforeDeadline = budgetKind == retry.BudgetDeadline
 			policy := mustStrictPolicy(t, config)
-			result, err := retry.Do(context.Background(), policy, func(context.Context) (retry.AttemptResult[string], error) {
+			result, err := retry.Do(ctx, policy, func(context.Context) (retry.AttemptResult[string], error) {
 				return retry.AttemptResult[string]{Outcome: retry.OutcomeKnown}, hinted
 			})
 			var budget *retry.BudgetError
-			wantReason := retry.ReasonElapsedBudget
-			wantText := "retry elapsed budget exhausted"
-			if budgetKind == retry.BudgetSleep {
-				wantReason = retry.ReasonSleepBudget
-				wantText = "retry sleep budget exhausted"
-			}
+			wantReason := map[retry.BudgetKind]retry.Reason{
+				retry.BudgetElapsed: retry.ReasonElapsedBudget, retry.BudgetSleep: retry.ReasonSleepBudget, retry.BudgetDeadline: retry.ReasonDeadlineBudget,
+			}[budgetKind]
+			wantText := "retry " + string(budgetKind) + " budget exhausted"
 			if hinted.calls != 1 || !errors.As(err, &budget) || budget.Kind != budgetKind || !errors.Is(err, hinted) || err.Error() != wantText || len(err.Error()) > retry.MaxTerminalErrorBytes || result.Value != "" || result.Outcome != retry.OutcomeKnown || result.Retry.Reason != wantReason || result.Retry.FinalDelay != 3*time.Second || len(result.Retry.History) != int(historyLimit) || !equalRetryResult(budget.Result(), result.Retry) {
 				t.Fatalf("kind=%s history=%d calls=%d result=%+v err=%v", budgetKind, historyLimit, hinted.calls, result, err)
 			}
